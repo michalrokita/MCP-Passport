@@ -12,7 +12,9 @@
     "start": "electron-vite preview",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
-    "typecheck": "npm run typecheck:node && npm run typecheck:web"
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "dist": "npm run build && electron-builder --mac --config electron-builder.config.cjs",
+    "dist:dir": "npm run build && electron-builder --mac --dir --config electron-builder.config.cjs"
   },
   "dependencies": {
     "@iconify/react": "^5.0.2",
@@ -28,6 +30,7 @@
     "@vitejs/plugin-react": "^4.3.2",
     "autoprefixer": "^10.4.20",
     "electron": "^32.1.2",
+    "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",
