@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { join } from 'path'
 import { hostname } from 'os'
 import { readFile, writeFile } from 'fs/promises'
@@ -28,6 +28,9 @@ import type {
 
 const isDev = !!process.env['ELECTRON_RENDERER_URL']
 
+const ICON_PATH = join(__dirname, '../../resources/icon.png')
+const appIcon = nativeImage.createFromPath(ICON_PATH)
+
 function createWindow(): void {
   const win = new BrowserWindow({
     width: 1360,
@@ -35,6 +38,7 @@ function createWindow(): void {
     minWidth: 1120,
     minHeight: 680,
     title: 'MCP Passport',
+    icon: appIcon.isEmpty() ? undefined : appIcon,
     backgroundColor: '#0e0e0d',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 14, y: 16 },
@@ -62,6 +66,10 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  if (process.platform === 'darwin' && app.dock && !appIcon.isEmpty()) {
+    app.dock.setIcon(appIcon)
+  }
+
   // IPC handlers
   ipcMain.handle('passport:scan', async () => scanAll())
 
