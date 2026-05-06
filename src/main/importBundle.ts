@@ -14,6 +14,8 @@ import { paths, projectClaudeSkillsDir } from './paths'
 import { scanAll } from './scanner'
 import { bytesToBundle, decryptBundle } from './passportFile'
 import { pathExists } from './util'
+import { listAuthCaches } from './adapters/mcpAuth'
+import { mcpUrlHash } from './mcpUrlHash'
 import * as claudeDesktop from './adapters/claudeDesktop'
 import * as claudeCode from './adapters/claudeCode'
 import * as codex from './adapters/codex'
@@ -59,7 +61,7 @@ export async function loadBundle(filePath: string, passphrase: string): Promise<
   const buf = await fs.readFile(filePath)
   const { plaintext } = decryptBundle(buf, passphrase)
   const bundle = bytesToBundle<ExportBundle>(plaintext)
-  if (bundle.schemaVersion !== 1) {
+  if (bundle.schemaVersion !== 1 && bundle.schemaVersion !== 2) {
     throw new Error(`Unsupported bundle schemaVersion ${bundle.schemaVersion}`)
   }
   return bundle
@@ -228,21 +230,53 @@ async function applyMcpAuth(
   item: Extract<ExportItem, { kind: 'mcp-auth' }>,
   requested: ConflictAction
 ): Promise<ImportApplyOutcome> {
-  const dir = join(paths.mcpAuthDir, item.host.replace(/:/g, '_'))
-  if (await pathExists(dir)) {
+  // v1 bundles stored mcp-auth keyed by host with the wrong file layout.
+  // We can't restore them safely — surface a skip with an explanation.
+  // @ts-expect-error legacy v1 shape
+  if (typeof item.host === 'string' && !item.url) {
     return {
       id: item.id,
+      // @ts-expect-error legacy v1 shape
       name: item.host,
       kind: 'mcp-auth',
       ok: true,
-      message: 'Host already authenticated locally — left untouched.',
+      message: 'Legacy v1 mcp-auth item — skipped. Re-export from a newer Passport.',
+      action: 'skip'
+    }
+  }
+
+  const url = item.url
+  const label = hostnameOf(url)
+  const hash = mcpUrlHash(url)
+  const targetVersion = await pickMcpRemoteVersion()
+  if (!targetVersion) {
+    return {
+      id: item.id,
+      name: label,
+      kind: 'mcp-auth',
+      ok: false,
+      message:
+        'No mcp-remote cache directory found locally. Run a remote MCP once to initialize ~/.mcp-auth/.',
+      action: requested
+    }
+  }
+  const versionDir = join(paths.mcpAuthDir, targetVersion)
+  // "Protected": tokens already present for this URL — never overwrite per policy.
+  const existing = await fs.readdir(versionDir).catch(() => [] as string[])
+  if (existing.some((f) => f === `${hash}_tokens.json`)) {
+    return {
+      id: item.id,
+      name: label,
+      kind: 'mcp-auth',
+      ok: true,
+      message: 'URL already authenticated locally — left untouched.',
       action: 'protected'
     }
   }
   if (requested === 'skip') {
     return {
       id: item.id,
-      name: item.host,
+      name: label,
       kind: 'mcp-auth',
       ok: true,
       message: 'Skipped.',
@@ -250,19 +284,25 @@ async function applyMcpAuth(
     }
   }
   try {
-    const n = await writeFilesFromBase64(dir, item.files)
+    let n = 0
+    await fs.mkdir(versionDir, { recursive: true })
+    for (const [tail, b64] of Object.entries(item.files)) {
+      const target = join(versionDir, `${hash}_${tail}`)
+      await fs.writeFile(target, Buffer.from(b64, 'base64'), { mode: 0o600 })
+      n++
+    }
     return {
       id: item.id,
-      name: item.host,
+      name: label,
       kind: 'mcp-auth',
       ok: true,
-      message: `Restored OAuth tokens for ${item.host} (${n} file${n === 1 ? '' : 's'}).`,
+      message: `Restored OAuth tokens for ${label} (${n} file${n === 1 ? '' : 's'}).`,
       action: 'overwrite'
     }
   } catch (e) {
     return {
       id: item.id,
-      name: item.host,
+      name: label,
       kind: 'mcp-auth',
       ok: false,
       message: (e as Error).message,
@@ -271,10 +311,36 @@ async function applyMcpAuth(
   }
 }
 
+async function pickMcpRemoteVersion(): Promise<string | null> {
+  // Prefer an existing mcp-remote-* subdir on the local box. If none exists
+  // yet (mcp-remote never ran), we can't safely guess the version directory
+  // name, so we bail and let the user trigger a real auth first.
+  if (!(await pathExists(paths.mcpAuthDir))) return null
+  const entries = await fs.readdir(paths.mcpAuthDir).catch(() => [] as string[])
+  const versions = entries.filter((e) => e.startsWith('mcp-remote-'))
+  if (versions.length === 0) return null
+  // Sort descending so we pick the newest version directory if there are several.
+  versions.sort().reverse()
+  return versions[0]
+}
+
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return url
+  }
+}
+
 // === Helpers ===
 
 function nameOf(item: ExportItem): string {
-  return item.kind === 'mcp-auth' ? item.host : item.name
+  if (item.kind === 'mcp-auth') {
+    if (item.url) return hostnameOf(item.url)
+    // @ts-expect-error legacy v1 shape
+    return item.host ?? '(unknown)'
+  }
+  return item.name
 }
 
 async function uniqueNameFor(
@@ -406,9 +472,17 @@ async function classify(item: ExportItem, scan: ScanResult): Promise<ImportPlanI
         : make('conflict', `${Object.keys(item.files).length} file(s) in bundle`)
     }
     case 'mcp-auth': {
-      const dir = join(paths.mcpAuthDir, item.host.replace(/:/g, '_'))
-      if (await pathExists(dir)) {
-        return make('protected', 'host already authenticated locally — leaving untouched', true)
+      // v1 items: legacy host-keyed; classify as protected (we'll skip on apply).
+      // @ts-expect-error legacy v1 shape
+      if (typeof item.host === 'string' && !item.url) {
+        return make('protected', 'legacy v1 mcp-auth — will be skipped', true)
+      }
+      const url = item.url
+      const hash = mcpUrlHash(url)
+      const caches = await listAuthCaches()
+      const existing = caches.find((c) => c.urlHash === hash && c.hasTokens)
+      if (existing) {
+        return make('protected', 'URL already authenticated locally — leaving untouched', true)
       }
       return make('new')
     }
@@ -421,7 +495,12 @@ function defaultActionFor(status: ImportItemStatus): ConflictAction {
 }
 
 function itemName(item: ExportItem): string {
-  return item.kind === 'mcp-auth' ? item.host : item.name
+  if (item.kind === 'mcp-auth') {
+    // @ts-expect-error legacy v1 shape may still carry .host
+    if (!item.url && item.host) return item.host as string
+    return hostnameOf(item.url)
+  }
+  return item.name
 }
 
 function itemSubtitle(item: ExportItem): string | undefined {

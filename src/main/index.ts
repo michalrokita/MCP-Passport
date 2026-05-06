@@ -15,6 +15,8 @@ import {
   bundleToBytes,
   PASSPORT_FILE_EXT
 } from './passportFile'
+import { runAuthFlow, clearAuthFor } from './adapters/mcpAuthRunner'
+import { fillSecrets } from './fillSecrets'
 import type {
   SyncRequest,
   LibraryMcpInput,
@@ -23,8 +25,14 @@ import type {
   RegistryEntry,
   ExportRunRequest,
   ImportPlanRequest,
-  ImportApplyRequest
+  ImportApplyRequest,
+  McpAuthRunRequest,
+  McpAuthClearRequest,
+  McpFillSecretsRequest
 } from '../shared/types'
+
+// Track in-flight auth flows so a second invocation cancels the first.
+const inFlightAuth = new Map<string, AbortController>()
 
 const isDev = !!process.env['ELECTRON_RENDERER_URL']
 
@@ -201,6 +209,45 @@ app.whenReady().then(() => {
   ipcMain.handle('passport:import:plan', async (_evt, req: ImportPlanRequest) => planImport(req))
 
   ipcMain.handle('passport:import:apply', async (_evt, req: ImportApplyRequest) => applyImport(req))
+
+  ipcMain.handle('passport:mcp-auth:run', async (_evt, req: McpAuthRunRequest) => {
+    const key = req.url
+    // Cancel any prior flow for the same URL — only one browser dance at a time.
+    const prior = inFlightAuth.get(key)
+    if (prior) prior.abort()
+    const controller = new AbortController()
+    inFlightAuth.set(key, controller)
+    try {
+      return await runAuthFlow(req, { signal: controller.signal })
+    } finally {
+      if (inFlightAuth.get(key) === controller) inFlightAuth.delete(key)
+    }
+  })
+
+  ipcMain.handle('passport:mcp-auth:cancel', async (_evt, url: string) => {
+    const c = inFlightAuth.get(url)
+    if (c) {
+      c.abort()
+      return { ok: true, message: 'Cancelled.' }
+    }
+    return { ok: false, message: 'No active auth flow for that URL.' }
+  })
+
+  ipcMain.handle('passport:mcp-auth:clear', async (_evt, req: McpAuthClearRequest) => {
+    try {
+      const { deleted, hash } = await clearAuthFor(req.url, req.headers)
+      return {
+        ok: true,
+        message: `Cleared ${deleted} cache file${deleted === 1 ? '' : 's'} for ${hash.slice(0, 8)}…`
+      }
+    } catch (e) {
+      return { ok: false, message: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle('passport:mcp:fill-secrets', async (_evt, req: McpFillSecretsRequest) =>
+    fillSecrets(req)
+  )
 
   createWindow()
 

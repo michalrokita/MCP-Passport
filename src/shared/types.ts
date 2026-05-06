@@ -63,7 +63,18 @@ export interface ItemPresence {
 }
 
 export type ItemSource =
-  | { kind: 'mcp'; canonical: CanonicalMcp; raw: unknown; locator: McpLocator }
+  | {
+      kind: 'mcp'
+      canonical: CanonicalMcp
+      raw: unknown
+      locator: McpLocator
+      /**
+       * md5 hash of `canonical.url` (matches mcp-remote's getServerUrlHash).
+       * Set during scan when the MCP has a URL; absent for stdio MCPs.
+       * Renderer matches against ScanResult.authedServerHashes.
+       */
+      urlHash?: string
+    }
   | { kind: 'skill'; path: string; frontmatter: Record<string, unknown> }
   | {
       kind: 'plugin'
@@ -87,11 +98,10 @@ export interface ScanResult {
   tools: ToolPresence[]
   items: InventoryItem[]
   projects: ProjectInfo[]
-  /**
-   * Hosts (e.g. "https://mcp.betterstack.com") for which mcp-remote has cached an OAuth token.
-   * Surface this on MCP rows whose URL host matches.
-   */
-  authedHosts: string[]
+  // md5 hashes of MCP URLs for which mcp-remote has cached OAuth tokens
+  // (i.e. a `{hash}_tokens.json` exists in `~/.mcp-auth/mcp-remote-VERSION/`).
+  // The renderer computes the same hash for each MCP's URL and matches.
+  authedServerHashes: string[]
 }
 
 export interface SyncSource {
@@ -234,6 +244,70 @@ export interface PassportApi {
   importPickFile: () => Promise<string | null>
   importPlan: (req: ImportPlanRequest) => Promise<ImportPlan>
   importApply: (req: ImportApplyRequest) => Promise<ImportApplyResult>
+
+  // Auth flows for remote MCPs (mcp-remote-client wrapper)
+  mcpAuthRun: (req: McpAuthRunRequest) => Promise<McpAuthRunResult>
+  mcpAuthCancel: (url: string) => Promise<{ ok: boolean; message: string }>
+  mcpAuthClear: (req: McpAuthClearRequest) => Promise<{ ok: boolean; message: string }>
+
+  // Fill in env-var / header secrets for an MCP and propagate to all tools that have it.
+  mcpFillSecrets: (req: McpFillSecretsRequest) => Promise<McpFillSecretsResult>
+}
+
+// === Auth flow ===
+
+export interface McpAuthRunRequest {
+  /** Full URL of the remote MCP (e.g. https://mcp.notion.com/sse). */
+  url: string
+  /** Optional headers passed through as `--header K:V` to mcp-remote-client. */
+  headers?: Record<string, string>
+}
+
+export interface McpAuthRunResult {
+  ok: boolean
+  message: string
+  /** Process exit code, or null if the spawn itself failed. */
+  exitCode: number | null
+  /** Wall-clock duration in ms. */
+  durationMs?: number
+  /** Last ~2 KB of stderr for the user-visible "View log" disclosure. */
+  stderrTail?: string
+}
+
+export interface McpAuthClearRequest {
+  url: string
+  headers?: Record<string, string>
+}
+
+// === Fill secrets ===
+
+export interface McpFillSecretsTarget {
+  toolId: ToolId
+  scope: Scope
+  projectPath?: string
+}
+
+export interface McpFillSecretsRequest {
+  /** MCP name (used to locate the entry in each tool's config). */
+  name: string
+  /** New env values: { ENV_KEY: "secret-value" }. Existing keys are overwritten. */
+  env?: Record<string, string>
+  /** New header values: { "Authorization": "Bearer …" }. */
+  headers?: Record<string, string>
+  /** Where to write. If omitted, writes to every tool/scope that already has this MCP. */
+  targets?: McpFillSecretsTarget[]
+}
+
+export interface McpFillSecretsOutcome {
+  target: McpFillSecretsTarget
+  ok: boolean
+  message: string
+}
+
+export interface McpFillSecretsResult {
+  ok: boolean
+  message: string
+  outcomes: McpFillSecretsOutcome[]
 }
 
 // === Encrypted export / import ===
@@ -262,11 +336,12 @@ export interface ExportItemDescriptor {
   defaultIncluded: boolean
   // Approximate serialized size in bytes (best-effort, for UI hints).
   approxBytes?: number
-  // Where the item lives. Tool-scoped items carry tool/scope/project; auth items carry host.
+  // Where the item lives. Tool-scoped items carry tool/scope/project; auth items carry the MCP URL.
   toolId?: ToolId
   scope?: Scope
   projectPath?: string
-  host?: string
+  /** For mcp-auth items: the full MCP URL the cached tokens belong to. */
+  url?: string
 }
 
 export interface ExportPlan {
@@ -299,7 +374,9 @@ export interface ExportRunResult {
 // === Bundle format (the JSON that's encrypted) ===
 
 export interface ExportBundle {
-  schemaVersion: 1
+  // 1: original (broken) host-keyed mcp-auth layout — read-only on import.
+  // 2: url-keyed mcp-auth layout matching mcp-remote's real cache structure.
+  schemaVersion: 1 | 2
   exportedAt: string
   originOS: string
   originHost: string
@@ -356,9 +433,15 @@ export interface ExportItemToolSkill {
 export interface ExportItemMcpAuth {
   id: ExportItemId
   kind: 'mcp-auth'
-  // Hostname or full base URL the OAuth tokens belong to.
-  host: string
-  // Map of relative-path within ~/.mcp-auth/<host>/ → base64 contents.
+  // Schema v2: full server URL the OAuth tokens belong to. The hash is
+  // recomputed on import using the local mcp-remote layout.
+  url: string
+  // mcp-remote version subdir the cache came from (e.g. "mcp-remote-0.1.38").
+  // Informational; the importer always writes into the version it finds locally.
+  fromVersion?: string
+  // Map of file basename (e.g. "tokens.json", "client_info.json") → base64
+  // contents. Filenames in the original cache are prefixed with the url-hash;
+  // we strip that prefix here so the importer can re-prefix with its own hash.
   files: Record<string, string>
 }
 

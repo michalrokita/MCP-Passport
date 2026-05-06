@@ -2,7 +2,8 @@ import * as claudeDesktop from './adapters/claudeDesktop'
 import * as claudeCode from './adapters/claudeCode'
 import * as codex from './adapters/codex'
 import * as passport from './adapters/passport'
-import { listAuthCaches } from './adapters/mcpAuth'
+import { listAuthedUrlHashes } from './adapters/mcpAuth'
+import { mcpUrlHash } from './mcpUrlHash'
 import type {
   InventoryItem,
   ScanResult,
@@ -90,6 +91,17 @@ export async function scanAll(): Promise<ScanResult> {
     return a.name.localeCompare(b.name)
   })
 
+  // Stamp md5 hashes onto every MCP presence with a URL so the renderer can
+  // match against authedServerHashes without needing Node crypto.
+  for (const item of merged) {
+    if (item.kind !== 'mcp') continue
+    for (const p of item.presences) {
+      if (p.source.kind !== 'mcp') continue
+      const url = p.source.canonical.url
+      if (url) p.source.urlHash = mcpUrlHash(url)
+    }
+  }
+
   const tools: ToolPresence[] = [
     passportPres,
     claudeCodePres,
@@ -98,17 +110,14 @@ export async function scanAll(): Promise<ScanResult> {
     codexDesktopPres
   ]
 
-  const authCaches = await listAuthCaches()
-  const authedHosts = authCaches
-    .filter((a) => a.hasTokens)
-    .map((a) => a.host.startsWith('http') ? a.host : `https://${a.host}`)
+  const authedServerHashes = await listAuthedUrlHashes()
 
   return {
     scannedAt: new Date().toISOString(),
     tools,
     items: merged,
     projects: projectInfo,
-    authedHosts
+    authedServerHashes
   }
 }
 

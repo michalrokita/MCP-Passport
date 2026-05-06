@@ -1,10 +1,14 @@
+import { useState } from 'react'
 import type {
+  CanonicalMcp,
   InventoryItem,
   ItemPresence,
   ToolPresence
 } from '../../../shared/types'
 import { ToolIcon } from './ToolIcon'
 import { useApp } from '../lib/store'
+import { useToaster } from './Toaster'
+import { FillSecretsDialog, findMissingSecrets } from './FillSecretsDialog'
 
 const TOOL_ORDER: Array<ToolPresence['id']> = [
   'claude-code',
@@ -55,19 +59,31 @@ export function ItemRow({
   // Library presence — shown as a dedicated "Saved" badge, not a tool pill.
   const inLibrary = item.presences.some((p) => p.toolId === 'passport')
 
-  // Auth state for remote MCPs
-  const authedHosts = useApp((s) => s.scan?.authedHosts ?? [])
-  const authed = item.presences.some((p) => {
-    if (p.source.kind !== 'mcp' || !p.source.canonical.url) return false
-    const host = (() => {
-      try {
-        return new URL(p.source.canonical.url).host
-      } catch {
-        return ''
-      }
-    })()
-    return authedHosts.some((h) => h.includes(host))
-  })
+  // Auth state for remote MCPs (matched by md5 hash of canonical.url).
+  const authedServerHashes = useApp((s) => s.scan?.authedServerHashes ?? [])
+  const authedSet = new Set(authedServerHashes)
+  const authed = item.presences.some(
+    (p) => p.source.kind === 'mcp' && p.source.urlHash && authedSet.has(p.source.urlHash)
+  )
+
+  // First remote (http/sse + URL) MCP presence — single source of auth handle.
+  const remotePresence = item.presences.find(
+    (p) =>
+      p.source.kind === 'mcp' &&
+      (p.source.canonical.transport === 'http' || p.source.canonical.transport === 'sse') &&
+      !!p.source.canonical.url
+  )
+  const remoteCanonical =
+    remotePresence?.source.kind === 'mcp' ? remotePresence.source.canonical : null
+  // If the user already provided a static Authorization header, we don't need OAuth.
+  const hasStaticAuth =
+    !!remoteCanonical?.headers &&
+    Object.keys(remoteCanonical.headers).some((k) => k.toLowerCase() === 'authorization')
+  const needsAuth = !!remoteCanonical && !authed && !hasStaticAuth && item.kind === 'mcp'
+
+  // Missing secrets: env keys / headers declared but blank.
+  const missingSecrets = item.kind === 'mcp' ? findMissingSecrets(item) : []
+  const [secretsOpen, setSecretsOpen] = useState(false)
 
   return (
     <div className="surface flex items-center gap-4 px-4 py-3">
@@ -97,13 +113,28 @@ export function ItemRow({
               Connector
             </span>
           )}
-          {authed && (
-            <span
-              title="OAuth token cached in ~/.mcp-auth/"
-              className="rounded border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-emerald-200"
+          {remoteCanonical && (
+            <AuthControl
+              canonical={remoteCanonical}
+              authed={authed}
+              needsAuth={needsAuth}
+            />
+          )}
+          {missingSecrets.length > 0 && (
+            <button
+              onClick={() => setSecretsOpen(true)}
+              title={`Missing values for: ${missingSecrets.map((m) => m.key).join(', ')}`}
+              className="rounded border border-amber-400/40 bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-200 hover:bg-amber-400/25"
             >
-              Authed
-            </span>
+              Fill secrets ({missingSecrets.length})
+            </button>
+          )}
+          {secretsOpen && (
+            <FillSecretsDialog
+              item={item}
+              missing={missingSecrets}
+              onClose={() => setSecretsOpen(false)}
+            />
           )}
         </div>
         {item.description && (
@@ -168,6 +199,139 @@ function FolderIcon({ className = '' }: { className?: string }): JSX.Element {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden>
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  )
+}
+
+function AuthControl({
+  canonical,
+  authed,
+  needsAuth
+}: {
+  canonical: CanonicalMcp
+  authed: boolean
+  needsAuth: boolean
+}): JSX.Element | null {
+  const refresh = useApp((s) => s.refresh)
+  const showToast = useToaster((s) => s.show)
+  const [running, setRunning] = useState(false)
+  const [stderrTail, setStderrTail] = useState<string | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  if (!canonical.url) return null
+  const url = canonical.url
+  const host = (() => {
+    try {
+      return new URL(url).host
+    } catch {
+      return url
+    }
+  })()
+
+  const onSignIn = async (): Promise<void> => {
+    setRunning(true)
+    setStderrTail(null)
+    try {
+      const result = await window.api.mcpAuthRun({ url, headers: canonical.headers })
+      if (result.ok) {
+        showToast(`Signed in to ${host}.`, 'ok')
+      } else {
+        showToast(`Sign in failed: ${result.message}`, 'error')
+        if (result.stderrTail) setStderrTail(result.stderrTail)
+      }
+    } catch (e) {
+      showToast(`Sign in failed: ${(e as Error).message}`, 'error')
+    } finally {
+      setRunning(false)
+      await refresh()
+    }
+  }
+
+  const onCancel = async (): Promise<void> => {
+    await window.api.mcpAuthCancel(url).catch(() => undefined)
+  }
+
+  const onSignOut = async (): Promise<void> => {
+    setMenuOpen(false)
+    try {
+      const result = await window.api.mcpAuthClear({ url, headers: canonical.headers })
+      if (result.ok) showToast(`Signed out of ${host}.`, 'ok')
+      else showToast(`Sign out failed: ${result.message}`, 'error')
+    } finally {
+      await refresh()
+    }
+  }
+
+  if (running) {
+    return (
+      <div className="flex items-center gap-1">
+        <span className="inline-flex items-center gap-1 rounded border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-amber-200">
+          <Spinner /> Signing in…
+        </span>
+        <button onClick={onCancel} className="text-[10px] text-ink-400 hover:text-ink-200">
+          Cancel
+        </button>
+      </div>
+    )
+  }
+
+  if (authed) {
+    return (
+      <div className="relative">
+        <button
+          onClick={() => setMenuOpen((v) => !v)}
+          title={`OAuth token cached for ${host}`}
+          className="rounded border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-emerald-200 hover:bg-emerald-400/20"
+        >
+          Authed ▾
+        </button>
+        {menuOpen && (
+          <div
+            onMouseLeave={() => setMenuOpen(false)}
+            className="absolute right-0 z-20 mt-1 w-44 rounded-md border border-white/10 bg-ink-900/95 p-1 text-xs shadow-xl backdrop-blur"
+          >
+            <button
+              onClick={onSignOut}
+              className="block w-full rounded px-2 py-1.5 text-left text-ink-200 hover:bg-white/5"
+            >
+              Sign out / clear tokens
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (needsAuth) {
+    return (
+      <div className="relative inline-flex flex-col items-end gap-1">
+        <button
+          onClick={onSignIn}
+          title={`Sign in to ${host} via mcp-remote`}
+          className="rounded border border-amber-400/40 bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-200 hover:bg-amber-400/25"
+        >
+          Sign in
+        </button>
+        {stderrTail && (
+          <details className="text-[10px] text-ink-500">
+            <summary className="cursor-pointer hover:text-ink-300">View log</summary>
+            <pre className="mt-1 max-h-40 max-w-xs overflow-auto whitespace-pre-wrap rounded bg-black/40 p-2 text-[10px] text-ink-400">
+              {stderrTail}
+            </pre>
+          </details>
+        )}
+      </div>
+    )
+  }
+
+  return null
+}
+
+function Spinner(): JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" className="h-2.5 w-2.5 animate-spin" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
     </svg>
   )
 }
