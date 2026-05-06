@@ -5,6 +5,7 @@ import { TopBar } from './components/TopBar'
 import { ItemList } from './components/ItemList'
 import { Browse } from './components/Browse'
 import { Toaster } from './components/Toaster'
+import { KindFilter } from './components/KindFilter'
 
 export default function App(): JSX.Element {
   const { refresh, scan, loading, error, view } = useApp()
@@ -30,8 +31,13 @@ export default function App(): JSX.Element {
               <div className="mt-1 text-red-200/80">{error}</div>
             </div>
           )}
-          {scan && view === 'inventory' && <ItemList />}
-          {scan && view === 'browse' && <Browse />}
+          {scan && (
+            <>
+              <KindFilter />
+              {view === 'inventory' && <ItemList />}
+              {view === 'browse' && <Browse />}
+            </>
+          )}
         </main>
       </div>
       <Toaster />
