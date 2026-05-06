@@ -5,10 +5,10 @@
 // bundle pass reads file contents and base64-encodes them.
 
 import { promises as fs } from 'fs'
-import { join, relative } from 'path'
+import { basename, join, relative } from 'path'
 import { hostname, platform } from 'os'
-import { paths } from './paths'
 import { listAuthCaches } from './adapters/mcpAuth'
+import { mcpUrlHash } from './mcpUrlHash'
 import { scanAll } from './scanner'
 import type {
   CanonicalMcp,
@@ -51,7 +51,7 @@ export async function buildBundle(
     if (item) items.push(item)
   }
   const bundle: ExportBundle = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     exportedAt: new Date().toISOString(),
     originOS: platform(),
     originHost: hostname(),
@@ -72,22 +72,38 @@ async function listAvailableItems(scan: ScanResult): Promise<ExportItemDescripto
       if (desc) out.push(desc)
     }
   }
+  // Map every known MCP URL to its hash so we can label cache entries by URL.
+  const hashToUrl = new Map<string, string>()
+  for (const item of scan.items) {
+    if (item.kind !== 'mcp') continue
+    for (const p of item.presences) {
+      if (p.source.kind === 'mcp' && p.source.urlHash && p.source.canonical.url) {
+        hashToUrl.set(p.source.urlHash, p.source.canonical.url)
+      }
+    }
+  }
+
   for (const c of await listAuthCaches()) {
     if (!c.hasTokens) continue
+    const url = hashToUrl.get(c.urlHash)
+    // Cache entries with no matching MCP locally are still exportable, but we
+    // can't label them with a friendly URL. Skip them — without the URL the
+    // importer can't recompute the hash on the destination machine.
+    if (!url) continue
     let bytes = 0
     for (const f of c.files) {
       const st = await fs.stat(f).catch(() => null)
       if (st) bytes += st.size
     }
     out.push({
-      id: authId(c.host),
+      id: authId(url),
       kind: 'mcp-auth',
-      name: c.host,
-      subtitle: `${c.files.length} file${c.files.length === 1 ? '' : 's'}`,
+      name: hostnameOf(url),
+      subtitle: `${c.files.length} file${c.files.length === 1 ? '' : 's'} · ${c.version}`,
       hasSecrets: true,
       defaultIncluded: true,
       approxBytes: bytes,
-      host: c.host
+      url
     })
   }
   return out
@@ -210,11 +226,31 @@ async function materializeItem(
       }
     }
     case 'mcp-auth': {
-      const host = desc.host ?? desc.name
-      const dir = join(paths.mcpAuthDir, host.replace(/:/g, '_'))
-      const files = await readDirAsBase64(dir).catch(() => ({}))
+      const url = desc.url
+      if (!url) return null
+      const caches = await listAuthCaches()
+      const target = caches.find((c) => c.urlHash === mcpUrlHash(url))
+      if (!target || !target.hasTokens) return null
+      const files: Record<string, string> = {}
+      for (const f of target.files) {
+        const fname = basename(f)
+        // Strip the {hash}_ prefix so the importer can re-prefix locally.
+        const prefix = `${target.urlHash}_`
+        const tail = fname.startsWith(prefix) ? fname.slice(prefix.length) : fname
+        // Skip the verifier and lock — they're transient, only tokens + client_info matter.
+        if (tail === 'code_verifier.txt' || tail === 'lock.json') continue
+        if (tail.endsWith('_debug.log') || tail === 'debug.log') continue
+        const buf = await fs.readFile(f).catch(() => null)
+        if (buf) files[tail] = buf.toString('base64')
+      }
       if (Object.keys(files).length === 0) return null
-      return { id: desc.id, kind: 'mcp-auth', host, files }
+      return {
+        id: desc.id,
+        kind: 'mcp-auth',
+        url,
+        fromVersion: target.version,
+        files
+      }
     }
   }
   return null
@@ -251,7 +287,15 @@ export const toolMcpId = (p: ItemPresence, name: string): string =>
   `tool-mcp:${p.toolId}:${p.scope}:${p.projectPath ? safe(p.projectPath) : ''}:${safe(name)}`
 export const toolSkillId = (p: ItemPresence, name: string): string =>
   `tool-skill:${p.toolId}:${p.scope}:${p.projectPath ? safe(p.projectPath) : ''}:${safe(name)}`
-export const authId = (host: string): string => `mcp-auth:${safe(host)}`
+export const authId = (url: string): string => `mcp-auth:${safe(url)}`
+
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return url
+  }
+}
 
 async function dirBytes(dir: string): Promise<number> {
   let total = 0

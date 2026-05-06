@@ -16,7 +16,12 @@ import type {
   ImportPlan,
   ImportPlanRequest,
   ImportApplyRequest,
-  ImportApplyResult
+  ImportApplyResult,
+  McpAuthRunRequest,
+  McpAuthRunResult,
+  McpAuthClearRequest,
+  McpFillSecretsRequest,
+  McpFillSecretsResult
 } from '../shared/types'
 
 const api: PassportApi = {
@@ -71,7 +76,15 @@ const api: PassportApi = {
   importPlan: (req: ImportPlanRequest) =>
     ipcRenderer.invoke('passport:import:plan', req) as Promise<ImportPlan>,
   importApply: (req: ImportApplyRequest) =>
-    ipcRenderer.invoke('passport:import:apply', req) as Promise<ImportApplyResult>
+    ipcRenderer.invoke('passport:import:apply', req) as Promise<ImportApplyResult>,
+  mcpAuthRun: (req: McpAuthRunRequest) =>
+    ipcRenderer.invoke('passport:mcp-auth:run', req) as Promise<McpAuthRunResult>,
+  mcpAuthCancel: (url: string) =>
+    ipcRenderer.invoke('passport:mcp-auth:cancel', url) as Promise<{ ok: boolean; message: string }>,
+  mcpAuthClear: (req: McpAuthClearRequest) =>
+    ipcRenderer.invoke('passport:mcp-auth:clear', req) as Promise<{ ok: boolean; message: string }>,
+  mcpFillSecrets: (req: McpFillSecretsRequest) =>
+    ipcRenderer.invoke('passport:mcp:fill-secrets', req) as Promise<McpFillSecretsResult>
 }
 
 contextBridge.exposeInMainWorld('api', api)
