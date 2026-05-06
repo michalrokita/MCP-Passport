@@ -1,17 +1,20 @@
 import { useApp } from '../lib/store'
-import type { ItemKind, ToolId } from '../../../shared/types'
+import type { ToolId } from '../../../shared/types'
 import { ToolIcon } from './ToolIcon'
 import { openInFinder } from '../lib/api'
 
-const KINDS: { id: ItemKind; label: string; icon: string }[] = [
-  { id: 'mcp', label: 'MCP servers', icon: '⛓' },
-  { id: 'skill', label: 'Skills', icon: '✦' },
-  { id: 'plugin', label: 'Plugins', icon: '◇' },
-  { id: 'agent', label: 'Agents', icon: '◌' }
-]
-
 export function Sidebar(): JSX.Element {
-  const { scan, activeKind, setActiveKind, toolFilter, setToolFilter } = useApp()
+  const { scan, toolFilter, setToolFilter, view, setView, activeKind, setActiveKind } = useApp()
+
+  function selectTool(id: ToolId | 'all'): void {
+    setView('inventory')
+    setToolFilter(id)
+  }
+
+  function selectMarketplace(): void {
+    setView('browse')
+    if (activeKind === 'plugin' || activeKind === 'agent') setActiveKind('mcp')
+  }
 
   return (
     <aside className="titlebar-drag flex w-64 shrink-0 flex-col border-r border-white/5 bg-ink-900/40">
@@ -28,31 +31,26 @@ export function Sidebar(): JSX.Element {
       </div>
 
       <nav className="titlebar-no-drag mt-2 px-3">
-        <SectionLabel>Browse</SectionLabel>
+        <SectionLabel>Discover</SectionLabel>
         <ul className="mt-1 space-y-0.5">
-          {KINDS.map((k) => {
-            const count = scan?.items.filter((it) => it.kind === k.id).length ?? 0
-            return (
-              <li key={k.id}>
-                <button
-                  className={
-                    'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors ' +
-                    (activeKind === k.id
-                      ? 'bg-white/10 text-ink-50'
-                      : 'text-ink-300 hover:bg-white/5 hover:text-ink-100')
-                  }
-                  onClick={() => setActiveKind(k.id)}
-                >
-                  <span className="w-4 text-center text-xs text-ink-400">{k.icon}</span>
-                  <span className="flex-1 text-left">{k.label}</span>
-                  <span className="text-[11px] tabular-nums text-ink-500">{count}</span>
-                </button>
-              </li>
-            )
-          })}
+          <li>
+            <ToolButton
+              active={view === 'browse'}
+              onClick={selectMarketplace}
+              label="Marketplace"
+              icon={
+                <span className="flex h-5 w-5 items-center justify-center rounded-md bg-white/5 text-[12px] text-ink-300">
+                  ⊕
+                </span>
+              }
+              countLabel="MCPs · skills"
+              installed={true}
+            />
+          </li>
         </ul>
 
-        <ul className="mt-5 space-y-0.5">
+        <SectionLabel className="mt-5">My library</SectionLabel>
+        <ul className="mt-1 space-y-0.5">
           {(() => {
             const passportTool = scan?.tools.find((t) => t.id === 'passport')
             if (!passportTool) return null
@@ -61,11 +59,12 @@ export function Sidebar(): JSX.Element {
                 (n, it) => n + (it.presences.some((p) => p.toolId === 'passport') ? 1 : 0),
                 0
               ) ?? 0
+            const active = view === 'inventory' && toolFilter === passportTool.id
             return (
               <li key={passportTool.id}>
                 <ToolButton
-                  active={toolFilter === passportTool.id}
-                  onClick={() => setToolFilter(passportTool.id as ToolId)}
+                  active={active}
+                  onClick={() => selectTool(passportTool.id as ToolId)}
                   label="My Library"
                   surface={undefined}
                   icon={<ToolIcon toolId={passportTool.id} className="h-5 w-5" />}
@@ -85,8 +84,8 @@ export function Sidebar(): JSX.Element {
         <ul className="mt-1 space-y-0.5">
           <li>
             <ToolButton
-              active={toolFilter === 'all'}
-              onClick={() => setToolFilter('all')}
+              active={view === 'inventory' && toolFilter === 'all'}
+              onClick={() => selectTool('all')}
               label="All agents"
               icon={<span className="text-[12px] text-ink-400">⌘</span>}
               tone="muted"
@@ -100,11 +99,12 @@ export function Sidebar(): JSX.Element {
                   (n, it) => n + (it.presences.some((p) => p.toolId === t.id) ? 1 : 0),
                   0
                 ) ?? 0
+              const active = view === 'inventory' && toolFilter === t.id
               return (
                 <li key={t.id}>
                   <ToolButton
-                    active={toolFilter === t.id}
-                    onClick={() => setToolFilter(t.id as ToolId)}
+                    active={active}
+                    onClick={() => selectTool(t.id as ToolId)}
                     label={t.name}
                     surface={t.surface}
                     icon={<ToolIcon toolId={t.id} className="h-5 w-5" />}

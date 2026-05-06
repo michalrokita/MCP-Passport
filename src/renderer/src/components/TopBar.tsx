@@ -10,12 +10,12 @@ export function TopBar(): JSX.Element {
     activeKind,
     scopeFilter,
     setScopeFilter,
+    toolFilter,
     projectFilter,
     setProjectFilter,
     query,
     setQuery,
-    view,
-    setView
+    view
   } = useApp()
   const [addOpen, setAddOpen] = useState(false)
 
@@ -23,21 +23,20 @@ export function TopBar(): JSX.Element {
 
   const showAdd = view === 'inventory' && (activeKind === 'mcp' || activeKind === 'skill')
 
+  const title = (() => {
+    if (view === 'browse') return 'Marketplace'
+    if (toolFilter === 'all') return 'All agents'
+    if (toolFilter === 'passport') return 'My Library'
+    const tool = scan?.tools.find((t) => t.id === toolFilter)
+    return tool?.name ?? 'All agents'
+  })()
+
   return (
     <>
       <header className="titlebar-drag flex h-12 shrink-0 items-center gap-3 border-b border-white/5 bg-ink-900/30 pl-24 pr-4">
         <div className="titlebar-no-drag flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
-          <div className="shrink-0 whitespace-nowrap text-sm font-semibold capitalize text-ink-50">
-            {kindLabel(activeKind)}
-          </div>
-
-          <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-white/10 bg-white/5 p-0.5 text-xs">
-            <ScopePill active={view === 'inventory'} onClick={() => setView('inventory')}>
-              Installed
-            </ScopePill>
-            <ScopePill active={view === 'browse'} onClick={() => setView('browse')}>
-              Browse
-            </ScopePill>
+          <div className="shrink-0 whitespace-nowrap text-sm font-semibold text-ink-50">
+            {title}
           </div>
 
           {view === 'inventory' && (
@@ -100,21 +99,6 @@ export function TopBar(): JSX.Element {
       )}
     </>
   )
-}
-
-function kindLabel(kind: string): string {
-  switch (kind) {
-    case 'mcp':
-      return 'MCPs'
-    case 'skill':
-      return 'Skills'
-    case 'plugin':
-      return 'Plugins'
-    case 'agent':
-      return 'Agents'
-    default:
-      return kind
-  }
 }
 
 function ScopePill({
