@@ -10,21 +10,30 @@ import type {
   CanonicalMcp,
   ItemKind,
   RegistryCatalog,
-  RegistryEntry
+  RegistryEntry,
+  RegistrySearchOptions
 } from '../shared/types'
 import { listCatalog as bundledCatalog } from './registry'
+import * as cache from './cache'
+import { classify } from './categorize'
 
 const UA = 'MCP-Passport/0.2 (+https://github.com/anthropics/claude-code)'
 const FETCH_TIMEOUT_MS = 8000
 
-interface CacheEntry {
-  fetchedAt: number
-  data: RegistryEntry[]
-}
+// Disk cache TTLs.
+const FRESH_TTL_MS = 30 * 60_000 // 30 minutes — UI will show without nagging
+const STALE_TTL_MS = 7 * 24 * 60 * 60_000 // 7 days — still served if network is down
+const CACHE_NAMESPACE = 'registry'
 
-// Module-scoped cache. Cleared on app restart.
-const cache = new Map<string, CacheEntry>()
-const CACHE_TTL_MS = 5 * 60_000
+// In-process cache to avoid hammering disk on rapid filter changes.
+const memCache = new Map<string, { writtenAt: number; data: RegistryEntry[] }>()
+const MEM_TTL_MS = 60_000
+
+interface SourceStatus {
+  name: string
+  status: 'ok' | 'fail' | 'skipped'
+  count: number
+}
 
 async function timedFetch(url: string, init?: RequestInit): Promise<Response> {
   const controller = new AbortController()
@@ -78,7 +87,7 @@ async function searchOfficial(query: string): Promise<RegistryEntry[]> {
   if (query) u.searchParams.set('search', query)
   u.searchParams.set('limit', '40')
   const data = await safeJson<{ servers?: OfficialServer[] }>(u.toString())
-  if (!data?.servers) return []
+  if (!data?.servers) throw new Error('official-fetch-failed')
   const out: RegistryEntry[] = []
   for (const item of data.servers) {
     const meta = Object.values(item._meta ?? {})[0]
@@ -145,7 +154,7 @@ async function searchSmithery(query: string): Promise<RegistryEntry[]> {
   if (query) u.searchParams.set('q', query)
   u.searchParams.set('pageSize', '30')
   const data = await safeJson<{ servers?: SmitheryItem[] }>(u.toString())
-  if (!data?.servers) return []
+  if (!data?.servers) throw new Error('smithery-fetch-failed')
   return data.servers.map((s) => ({
     id: `smithery:${s.qualifiedName ?? s.displayName ?? Math.random()}`,
     kind: 'mcp' as const,
@@ -154,8 +163,6 @@ async function searchSmithery(query: string): Promise<RegistryEntry[]> {
     description: (s.description ?? '').slice(0, 400),
     homepage: s.homepage,
     source: 'smithery.ai',
-    // Smithery doesn't expose canonical install in the list response; user clicks
-    // "Open homepage" to grab full setup. We still let them save it (URL) if remote.
     canonical: s.remote && s.qualifiedName
       ? {
           transport: 'http',
@@ -183,7 +190,7 @@ async function searchGlama(query: string): Promise<RegistryEntry[]> {
   if (query) u.searchParams.set('query', query)
   u.searchParams.set('first', '30')
   const data = await safeJson<{ servers?: GlamaServer[] }>(u.toString())
-  if (!data?.servers) return []
+  if (!data?.servers) throw new Error('glama-fetch-failed')
   return data.servers.map((s) => ({
     id: `glama:${s.id ?? s.slug ?? Math.random()}`,
     kind: 'mcp' as const,
@@ -192,7 +199,6 @@ async function searchGlama(query: string): Promise<RegistryEntry[]> {
     description: (s.description ?? '').slice(0, 400),
     homepage: s.url,
     source: 'glama.ai',
-    // Glama's list response lacks canonical install. Direct-link only.
     canonical: undefined,
     envVars: s.environmentVariablesJsonSchema?.properties
       ? Object.keys(s.environmentVariablesJsonSchema.properties).map((name) => ({ name }))
@@ -219,11 +225,10 @@ async function listSkillsFromGithubRepo(
   const data = await safeJson<GhTreeResponse>(u, {
     headers: { Accept: 'application/vnd.github+json' }
   })
-  if (!data?.tree) return []
+  if (!data?.tree) throw new Error(`gh-${owner}-fetch-failed`)
   const skillFiles = data.tree.filter(
     (t) => t.type === 'blob' && /\/SKILL\.md$/i.test(t.path)
   )
-  // Each path is like "skills/<name>/SKILL.md" — derive name from second-to-last segment.
   const out: RegistryEntry[] = skillFiles.map((t) => {
     const segs = t.path.split('/')
     const name = segs[segs.length - 2]
@@ -233,10 +238,9 @@ async function listSkillsFromGithubRepo(
       kind: 'skill' as const,
       name,
       publisher,
-      description: '', // filled in lazily on Add (we'd hit raw.githubusercontent.com)
+      description: '', // lazy-fetched on Add
       homepage: `https://github.com/${owner}/${repo}/blob/main/${t.path}`,
       source: `${owner}/${repo}`,
-      // We stash the raw URL inside `body` as a sentinel; loaded on demand at "add" time
       body: `__fetch__::${raw}`,
       tags: ['github']
     }
@@ -246,33 +250,125 @@ async function listSkillsFromGithubRepo(
 
 // ---------- Top-level search aggregator ----------
 function isOnline(): boolean {
-  // Lightweight; if fetch is undefined we're not networked at all (Node <18).
   return typeof fetch === 'function'
+}
+
+function cacheKey(kind: ItemKind, query: string): string {
+  return `${kind}|${query.toLowerCase().trim() || '__all__'}`
+}
+
+async function settle<T>(
+  name: string,
+  fn: () => Promise<T[]>,
+  status: SourceStatus[]
+): Promise<T[]> {
+  try {
+    const r = await fn()
+    status.push({ name, status: 'ok', count: r.length })
+    return r
+  } catch {
+    status.push({ name, status: 'fail', count: 0 })
+    return []
+  }
 }
 
 export async function searchRemote(
   query: string,
-  kind: ItemKind
+  kind: ItemKind,
+  options: RegistrySearchOptions = {}
 ): Promise<RegistryCatalog> {
-  if (!isOnline()) {
-    return { fetchedAt: new Date().toISOString(), entries: [], source: 'bundled' }
-  }
-  const cacheKey = `${kind}|${query.toLowerCase().trim()}`
-  const cached = cache.get(cacheKey)
-  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
-    return {
-      fetchedAt: new Date(cached.fetchedAt).toISOString(),
-      entries: cached.data,
-      source: 'url'
+  const key = cacheKey(kind, query)
+  const now = Date.now()
+
+  // 1) In-process cache (fastest path on rapid filter changes).
+  if (!options.bypassCache) {
+    const m = memCache.get(key)
+    if (m && now - m.writtenAt < MEM_TTL_MS) {
+      return {
+        fetchedAt: new Date(m.writtenAt).toISOString(),
+        entries: m.data,
+        source: 'cache',
+        cache: { fromCache: true, ageMs: now - m.writtenAt, fresh: true }
+      }
     }
   }
 
+  // 2) Disk cache — return immediately if fresh; if stale, return for now and refresh in background.
+  let cached: cache.CacheReadResult<RegistryEntry[]> | null = null
+  if (!options.bypassCache) {
+    cached = await cache.read<RegistryEntry[]>(CACHE_NAMESPACE, key, FRESH_TTL_MS)
+    if (cached?.fresh) {
+      memCache.set(key, { writtenAt: cached.writtenAt, data: cached.data })
+      return {
+        fetchedAt: new Date(cached.writtenAt).toISOString(),
+        entries: cached.data,
+        source: 'cache',
+        cache: { fromCache: true, ageMs: cached.ageMs, fresh: true }
+      }
+    }
+  }
+
+  // 3) Network fetch (the slow path) — but if we have ANY cached data, return that synchronously
+  // and refresh in the background (stale-while-revalidate). Only block on network when there's no
+  // cache at all, or when bypassCache was set explicitly.
+  if (cached && !options.bypassCache) {
+    void refreshInBackground(query, kind, key)
+    return {
+      fetchedAt: new Date(cached.writtenAt).toISOString(),
+      entries: cached.data,
+      source: 'cache',
+      cache: { fromCache: true, ageMs: cached.ageMs, fresh: false }
+    }
+  }
+
+  if (!isOnline()) {
+    return {
+      fetchedAt: new Date().toISOString(),
+      entries: [],
+      source: 'bundled',
+      sources: [{ name: 'offline', status: 'skipped', count: 0 }]
+    }
+  }
+
+  const result = await fetchAll(query, kind)
+  await cache.write(CACHE_NAMESPACE, key, FRESH_TTL_MS, result.entries)
+  memCache.set(key, { writtenAt: now, data: result.entries })
+  return {
+    fetchedAt: new Date().toISOString(),
+    entries: result.entries,
+    source: 'url',
+    cache: { fromCache: false, ageMs: 0, fresh: true },
+    sources: result.sources
+  }
+}
+
+async function refreshInBackground(
+  query: string,
+  kind: ItemKind,
+  key: string
+): Promise<void> {
+  try {
+    if (!isOnline()) return
+    const result = await fetchAll(query, kind)
+    await cache.write(CACHE_NAMESPACE, key, FRESH_TTL_MS, result.entries)
+    memCache.set(key, { writtenAt: Date.now(), data: result.entries })
+  } catch {
+    // ignore — best-effort refresh
+  }
+}
+
+async function fetchAll(
+  query: string,
+  kind: ItemKind
+): Promise<{ entries: RegistryEntry[]; sources: SourceStatus[] }> {
+  const sources: SourceStatus[] = []
   let entries: RegistryEntry[] = []
+
   if (kind === 'mcp') {
     const [official, smithery, glama] = await Promise.all([
-      searchOfficial(query),
-      searchSmithery(query),
-      searchGlama(query)
+      settle('modelcontextprotocol.io', () => searchOfficial(query), sources),
+      settle('smithery.ai', () => searchSmithery(query), sources),
+      settle('glama.ai', () => searchGlama(query), sources)
     ])
     entries = mergeMcps([...official, ...smithery, ...glama])
   } else if (kind === 'skill') {
@@ -281,7 +377,9 @@ export async function searchRemote(
       { owner: 'openai', repo: 'skills', publisher: 'OpenAI' }
     ]
     const lists = await Promise.all(
-      repos.map((r) => listSkillsFromGithubRepo(r.owner, r.repo, r.publisher))
+      repos.map((r) =>
+        settle(`${r.owner}/${r.repo}`, () => listSkillsFromGithubRepo(r.owner, r.repo, r.publisher), sources)
+      )
     )
     let all = lists.flat()
     if (query) {
@@ -294,17 +392,13 @@ export async function searchRemote(
       )
     }
     entries = all
-  } else {
-    entries = []
   }
 
-  // Merge in matching bundled entries. With an empty query we put curated entries
-  // at the top as "Featured"; with a real query we only include bundled entries
-  // whose name/description matches so they don't drown out the actual search results.
+  // Merge in matching bundled entries.
   const bundled = bundledCatalog().entries.filter((e) => e.kind === kind)
   const seenNames = new Set(entries.map((e) => e.name.toLowerCase()))
   const q = query.trim().toLowerCase()
-  const matchingBundled = bundled.filter((b) => {
+  const matching = bundled.filter((b) => {
     if (seenNames.has(b.name.toLowerCase())) return false
     if (!q) return true
     return (
@@ -313,32 +407,32 @@ export async function searchRemote(
       (b.publisher ?? '').toLowerCase().includes(q)
     )
   })
-  for (const b of matchingBundled) {
+  for (const b of matching) {
     entries.unshift({ ...b, source: b.source ?? 'curated' })
     seenNames.add(b.name.toLowerCase())
   }
+  if (matching.length) sources.push({ name: 'curated', status: 'ok', count: matching.length })
 
-  cache.set(cacheKey, { fetchedAt: Date.now(), data: entries })
-  return {
-    fetchedAt: new Date().toISOString(),
-    entries,
-    source: 'url'
+  // Attach a category to every entry — done once at fetch time, then cached on disk.
+  for (const e of entries) {
+    if (!e.category) e.category = classify(e)
   }
+
+  return { entries, sources }
 }
 
 function mergeMcps(items: RegistryEntry[]): RegistryEntry[] {
-  // Prefer the entry with a canonical install over one without; first source wins for ties.
   const byName = new Map<string, RegistryEntry>()
   for (const e of items) {
-    const key = e.name.toLowerCase()
-    const cur = byName.get(key)
+    const k = e.name.toLowerCase()
+    const cur = byName.get(k)
     if (!cur) {
-      byName.set(key, e)
+      byName.set(k, e)
       continue
     }
     const score = (x: RegistryEntry): number =>
       (x.canonical ? 2 : 0) + (x.description ? 1 : 0)
-    if (score(e) > score(cur)) byName.set(key, e)
+    if (score(e) > score(cur)) byName.set(k, e)
   }
   return [...byName.values()].sort((a, b) =>
     a.name.toLowerCase().localeCompare(b.name.toLowerCase())
@@ -346,18 +440,33 @@ function mergeMcps(items: RegistryEntry[]): RegistryEntry[] {
 }
 
 function friendlyName(raw: string): string {
-  return raw
-    .replace(/^@[^/]+\//, '')
-    .replace(/^[a-z0-9-]+\.[a-z0-9-]+\//, '')
-    .replace(/^mcp[-_]?/i, '')
-    .replace(/[-_]/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-    .trim() || raw
+  return (
+    raw
+      .replace(/^@[^/]+\//, '')
+      .replace(/^[a-z0-9-]+\.[a-z0-9-]+\//, '')
+      .replace(/^mcp[-_]?/i, '')
+      .replace(/[-_]/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      .trim() || raw
+  )
 }
 
-// Lazy fetch SKILL.md when user clicks "Add" on a github skill.
 export async function fetchSkillBody(rawUrl: string): Promise<string> {
+  // Per-URL disk cache — skill bodies rarely change.
+  const c = await cache.read<string>('skills', rawUrl, 24 * 60 * 60_000)
+  if (c?.fresh) return c.data
   const r = await timedFetch(rawUrl)
-  if (!r.ok) throw new Error(`Failed to fetch ${rawUrl} — HTTP ${r.status}`)
-  return await r.text()
+  if (!r.ok) {
+    if (c) return c.data // network died; serve stale
+    throw new Error(`Failed to fetch ${rawUrl} — HTTP ${r.status}`)
+  }
+  const text = await r.text()
+  await cache.write('skills', rawUrl, 24 * 60 * 60_000, text)
+  return text
+}
+
+export async function clearSearchCache(): Promise<void> {
+  memCache.clear()
+  await cache.clear(CACHE_NAMESPACE)
+  await cache.clear('skills')
 }

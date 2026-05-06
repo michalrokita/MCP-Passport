@@ -47,16 +47,27 @@ const api: PassportApi = {
       message: string
     }>,
   registryList: () => ipcRenderer.invoke('passport:registry:list') as Promise<RegistryCatalog>,
-  registrySearch: (query: string, kind: ItemKind) =>
-    ipcRenderer.invoke('passport:registry:search', { query, kind }) as Promise<RegistryCatalog>,
+  registrySearch: (query: string, kind: ItemKind, options) =>
+    ipcRenderer.invoke('passport:registry:search', {
+      query,
+      kind,
+      bypassCache: options?.bypassCache
+    }) as Promise<RegistryCatalog>,
   registryAddToLibrary: (entry) =>
     ipcRenderer.invoke('passport:registry:add', entry) as Promise<{
+      ok: boolean
+      message: string
+    }>,
+  registryClearCache: () =>
+    ipcRenderer.invoke('passport:registry:clear-cache') as Promise<{
       ok: boolean
       message: string
     }>,
   exportPlan: () => ipcRenderer.invoke('passport:export:plan') as Promise<ExportPlan>,
   exportRun: (req: ExportRunRequest) =>
     ipcRenderer.invoke('passport:export:run', req) as Promise<ExportRunResult>,
+  importPickFile: () =>
+    ipcRenderer.invoke('passport:import:pick-file') as Promise<string | null>,
   importPlan: (req: ImportPlanRequest) =>
     ipcRenderer.invoke('passport:import:plan', req) as Promise<ImportPlan>,
   importApply: (req: ImportApplyRequest) =>

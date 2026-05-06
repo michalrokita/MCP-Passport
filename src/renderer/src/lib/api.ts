@@ -43,6 +43,10 @@ export async function exportRun(req: ExportRunRequest) {
   return api.exportRun(req)
 }
 
+export async function importPickFile() {
+  return api.importPickFile()
+}
+
 export async function importPlan(req: ImportPlanRequest) {
   return api.importPlan(req)
 }

@@ -7,8 +7,9 @@ import { syncItem } from './sync'
 import { removeItemFromTool } from './remove'
 import * as passport from './adapters/passport'
 import * as registry from './registry'
-import { searchRemote } from './registrySearch'
+import { searchRemote, clearSearchCache } from './registrySearch'
 import { planExport, buildBundle } from './exportBundle'
+import { applyImport, planImport } from './importBundle'
 import {
   encryptBundle,
   bundleToBytes,
@@ -20,7 +21,9 @@ import type {
   LibrarySkillInput,
   ItemKind,
   RegistryEntry,
-  ExportRunRequest
+  ExportRunRequest,
+  ImportPlanRequest,
+  ImportApplyRequest
 } from '../shared/types'
 
 const isDev = !!process.env['ELECTRON_RENDERER_URL']
@@ -119,12 +122,26 @@ app.whenReady().then(() => {
   ipcMain.handle('passport:registry:list', async () => registry.listCatalog())
   ipcMain.handle(
     'passport:registry:search',
-    async (_evt, { query, kind }: { query: string; kind: ItemKind }) =>
-      searchRemote(query ?? '', kind)
+    async (
+      _evt,
+      {
+        query,
+        kind,
+        bypassCache
+      }: { query: string; kind: ItemKind; bypassCache?: boolean }
+    ) => searchRemote(query ?? '', kind, { bypassCache })
   )
   ipcMain.handle('passport:registry:add', async (_evt, entry: RegistryEntry) =>
     registry.addEntryToLibrary(entry)
   )
+  ipcMain.handle('passport:registry:clear-cache', async () => {
+    try {
+      await clearSearchCache()
+      return { ok: true, message: 'Cleared registry cache.' }
+    } catch (e) {
+      return { ok: false, message: (e as Error).message }
+    }
+  })
 
   ipcMain.handle('passport:export:plan', async () => planExport(app.getVersion()))
 
@@ -169,6 +186,21 @@ app.whenReady().then(() => {
       return { ok: false, message: (e as Error).message }
     }
   })
+
+  ipcMain.handle('passport:import:pick-file', async (evt) => {
+    const win = BrowserWindow.fromWebContents(evt.sender) ?? undefined
+    const result = await dialog.showOpenDialog(win as BrowserWindow, {
+      title: 'Open MCP Passport bundle',
+      properties: ['openFile'],
+      filters: [{ name: 'MCP Passport export', extensions: ['mcppassport'] }]
+    })
+    if (result.canceled || !result.filePaths.length) return null
+    return result.filePaths[0]
+  })
+
+  ipcMain.handle('passport:import:plan', async (_evt, req: ImportPlanRequest) => planImport(req))
+
+  ipcMain.handle('passport:import:apply', async (_evt, req: ImportApplyRequest) => applyImport(req))
 
   createWindow()
 

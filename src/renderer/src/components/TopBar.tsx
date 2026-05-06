@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useApp } from '../lib/store'
 import { AddToLibraryDialog } from './AddToLibraryDialog'
+import { ExportDialog } from './ExportDialog'
+import { ImportDialog } from './ImportDialog'
 
 export function TopBar(): JSX.Element {
   const {
@@ -18,6 +20,8 @@ export function TopBar(): JSX.Element {
     setView
   } = useApp()
   const [addOpen, setAddOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
 
   const projects = scan?.projects ?? []
 
@@ -87,6 +91,20 @@ export function TopBar(): JSX.Element {
           )}
           <button
             className="btn btn-outline shrink-0 whitespace-nowrap text-xs"
+            onClick={() => setExportOpen(true)}
+            title="Export an encrypted bundle of your MCPs and skills"
+          >
+            Export
+          </button>
+          <button
+            className="btn btn-outline shrink-0 whitespace-nowrap text-xs"
+            onClick={() => setImportOpen(true)}
+            title="Import an encrypted MCP Passport bundle"
+          >
+            Import
+          </button>
+          <button
+            className="btn btn-outline shrink-0 whitespace-nowrap text-xs"
             onClick={() => void refresh()}
             disabled={loading}
             title="Re-scan all tools for current state"
@@ -98,6 +116,8 @@ export function TopBar(): JSX.Element {
       {addOpen && (
         <AddToLibraryDialog kind={activeKind} onClose={() => setAddOpen(false)} />
       )}
+      {exportOpen && <ExportDialog onClose={() => setExportOpen(false)} />}
+      {importOpen && <ImportDialog onClose={() => setImportOpen(false)} />}
     </>
   )
 }

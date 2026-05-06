@@ -146,6 +146,22 @@ export interface LibrarySkillInput {
   allowedTools?: string
 }
 
+export type RegistryCategory =
+  | 'productivity'
+  | 'dev-tools'
+  | 'database'
+  | 'search-web'
+  | 'browser'
+  | 'cloud'
+  | 'monitoring'
+  | 'files'
+  | 'ai-vector'
+  | 'communication'
+  | 'memory'
+  | 'finance'
+  | 'design'
+  | 'other'
+
 export interface RegistryEntry {
   id: string
   kind: 'mcp' | 'skill'
@@ -155,6 +171,8 @@ export interface RegistryEntry {
   homepage?: string
   // human-readable source (e.g. "modelcontextprotocol.io", "anthropics/skills", "curated")
   source?: string
+  // Auto-classified category for filter chips.
+  category?: RegistryCategory
   // For MCP entries
   canonical?: CanonicalMcp
   envVars?: { name: string; description?: string; required?: boolean }[]
@@ -166,8 +184,20 @@ export interface RegistryEntry {
 export interface RegistryCatalog {
   fetchedAt: string
   entries: RegistryEntry[]
-  source: 'bundled' | 'url'
+  source: 'bundled' | 'url' | 'cache'
   url?: string
+  // Optional cache metadata for the renderer to surface "cached N min ago".
+  cache?: {
+    fromCache: boolean
+    ageMs: number
+    fresh: boolean
+  }
+  // Per-source status pills, populated when the search runs against multiple registries.
+  sources?: { name: string; status: 'ok' | 'fail' | 'skipped'; count: number }[]
+}
+
+export interface RegistrySearchOptions {
+  bypassCache?: boolean
 }
 
 export interface PassportApi {
@@ -190,12 +220,18 @@ export interface PassportApi {
 
   // Registry / store
   registryList: () => Promise<RegistryCatalog>
-  registrySearch: (query: string, kind: ItemKind) => Promise<RegistryCatalog>
+  registrySearch: (
+    query: string,
+    kind: ItemKind,
+    options?: RegistrySearchOptions
+  ) => Promise<RegistryCatalog>
   registryAddToLibrary: (entry: RegistryEntry) => Promise<{ ok: boolean; message: string }>
+  registryClearCache: () => Promise<{ ok: boolean; message: string }>
 
   // Encrypted export / import
   exportPlan: () => Promise<ExportPlan>
   exportRun: (req: ExportRunRequest) => Promise<ExportRunResult>
+  importPickFile: () => Promise<string | null>
   importPlan: (req: ImportPlanRequest) => Promise<ImportPlan>
   importApply: (req: ImportApplyRequest) => Promise<ImportApplyResult>
 }
