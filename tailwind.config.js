@@ -5,35 +5,29 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: [
-          '-apple-system',
-          'BlinkMacSystemFont',
-          'SF Pro Display',
-          'Inter',
-          'system-ui',
-          'sans-serif'
-        ],
-        mono: ['SF Mono', 'JetBrains Mono', 'ui-monospace', 'monospace']
+        sans: ['Geist', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace']
       },
       colors: {
         ink: {
-          50: '#f8f8f7',
-          100: '#efeeec',
-          200: '#dfdedb',
-          300: '#bfbcb6',
-          400: '#9b9890',
-          500: '#777570',
-          600: '#54534f',
-          700: '#3a3937',
-          800: '#262624',
-          850: '#1d1d1c',
-          900: '#161615',
-          950: '#0e0e0d'
+          50: '#f4f4f0',
+          100: '#e8e8e3',
+          200: '#d2d2cc',
+          300: '#b6b6b0',
+          400: '#8a8a84',
+          500: '#6b6b66',
+          600: '#4a4a47',
+          700: '#2d2d2b',
+          800: '#1f1f1d',
+          850: '#161615',
+          900: '#131312',
+          950: '#0a0a0a'
         },
         accent: {
-          DEFAULT: '#c97f3a',
-          soft: '#e9aa6f',
-          deep: '#9c5e26'
+          DEFAULT: 'oklch(0.74 0.16 148)',
+          soft: 'oklch(0.82 0.13 148)',
+          deep: 'oklch(0.6 0.15 148)',
+          glow: 'oklch(0.74 0.16 148 / 0.18)'
         }
       }
     }
