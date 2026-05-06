@@ -52,8 +52,7 @@ export function Sidebar(): JSX.Element {
           })}
         </ul>
 
-        <SectionLabel className="mt-5">My library</SectionLabel>
-        <ul className="mt-1 space-y-0.5">
+        <ul className="mt-5 space-y-0.5">
           {(() => {
             const passportTool = scan?.tools.find((t) => t.id === 'passport')
             if (!passportTool) return null
@@ -67,7 +66,7 @@ export function Sidebar(): JSX.Element {
                 <ToolButton
                   active={toolFilter === passportTool.id}
                   onClick={() => setToolFilter(passportTool.id as ToolId)}
-                  label={passportTool.name}
+                  label="My Library"
                   surface={undefined}
                   icon={<ToolIcon toolId={passportTool.id} className="h-5 w-5" />}
                   installed={true}
