@@ -5,7 +5,11 @@ node_modules/
 out/
 dist/
 build/
-release/
+
+# Release directory — only ship the Apple Silicon DMG so the website link works.
+# Everything else (intel DMG, both .zips, unpacked .app dirs, blockmaps, yml) is local-only.
+release/*
+!release/MCP-Passport-mac-arm64.dmg
 
 # TypeScript incremental build info
 *.tsbuildinfo
@@ -34,9 +38,12 @@ Thumbs.db
 *.swp
 *.swo
 
-# Electron
+# Electron build artifacts (the released arm64 DMG above is re-allowed at the bottom)
 *.app
 *.dmg
 *.exe
 *.deb
 *.AppImage
+
+# Re-allow the one DMG we ship — must come AFTER *.dmg above.
+!release/MCP-Passport-mac-arm64.dmg

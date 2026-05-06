@@ -21,6 +21,11 @@ module.exports = {
 
   asar: true,
 
+  // Stable filename so the website's download link doesn't break across versions.
+  // ${arch} expands to "arm64" or "x64". We commit only the arm64 .dmg to git;
+  // everything else is gitignored.
+  artifactName: 'MCP-Passport-mac-${arch}.${ext}',
+
   mac: {
     category: 'public.app-category.developer-tools',
     icon: 'build/icon.icns',
