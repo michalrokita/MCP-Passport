@@ -30,6 +30,9 @@ type RawMcp = {
   headers?: Record<string, string>
 }
 
+// Generic raw <-> canonical conversion (used by Claude Code, which natively
+// supports {type, url, headers} in ~/.claude.json). Claude Desktop has
+// additional constraints — see canonicalToRawForClaudeDesktop below.
 export function rawToCanonical(raw: RawMcp): CanonicalMcp {
   const transport: McpTransport = raw.type ?? (raw.command ? 'stdio' : raw.url ? 'http' : 'stdio')
   return {
@@ -54,6 +57,66 @@ export function canonicalToRaw(c: CanonicalMcp): RawMcp {
     type: c.transport,
     url: c.url,
     headers: c.headers
+  }
+}
+
+// Claude Desktop's claude_desktop_config.json schema only accepts stdio
+// servers; writing `{"type": "http", "url": ...}` triggers
+// "MCP wasn't loaded due to misconfigured json" on launch. So when we write to
+// Claude Desktop we wrap any remote MCP through the `mcp-remote` stdio proxy.
+// Headers map to repeated --header flags.
+function canonicalToRawForClaudeDesktop(c: CanonicalMcp): RawMcp {
+  if (c.transport === 'stdio') return canonicalToRaw(c)
+  const args: string[] = ['-y', 'mcp-remote']
+  if (c.url) args.push(c.url)
+  if (c.headers) {
+    for (const [name, value] of Object.entries(c.headers)) {
+      args.push('--header', `${name}: ${value}`)
+    }
+  }
+  if (c.transport === 'sse') args.push('--transport', 'sse-only')
+  return { command: 'npx', args }
+}
+
+// Inverse of canonicalToRawForClaudeDesktop: detect the `npx -y mcp-remote ...`
+// pattern and recover the original remote canonical, so the inventory shows the
+// real URL/transport instead of a generic stdio command.
+function rawToCanonicalForClaudeDesktop(raw: RawMcp): CanonicalMcp {
+  const unwrapped = unwrapMcpRemote(raw)
+  return unwrapped ?? rawToCanonical(raw)
+}
+
+function unwrapMcpRemote(raw: RawMcp): CanonicalMcp | null {
+  if (raw.command !== 'npx' || !Array.isArray(raw.args)) return null
+  // Strip leading flags like `-y` / `--yes` so we can find the package name.
+  const args = [...raw.args]
+  while (args.length && /^-/.test(args[0])) args.shift()
+  if (args.shift() !== 'mcp-remote') return null
+  // The first non-flag remaining arg is the URL. Walk the rest to recover
+  // headers and the transport hint.
+  let url: string | undefined
+  let transport: McpTransport = 'http'
+  const headers: Record<string, string> = {}
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (a === '--transport' && args[i + 1] === 'sse-only') {
+      transport = 'sse'
+      i++
+      continue
+    }
+    if (a === '--header' && typeof args[i + 1] === 'string') {
+      const m = /^([^:]+):\s*(.*)$/.exec(args[i + 1])
+      if (m) headers[m[1].trim()] = m[2]
+      i++
+      continue
+    }
+    if (!a.startsWith('-') && !url) url = a
+  }
+  if (!url) return null
+  return {
+    transport,
+    url,
+    headers: Object.keys(headers).length ? headers : undefined
   }
 }
 
@@ -99,7 +162,7 @@ async function readLocalMcps(): Promise<InventoryItem[]> {
   const items: InventoryItem[] = []
   for (const [name, raw] of Object.entries(servers)) {
     const rawObj = raw as RawMcp
-    const canonical = rawToCanonical(rawObj)
+    const canonical = rawToCanonicalForClaudeDesktop(rawObj)
     items.push({
       id: stableId(['mcp', name]),
       kind: 'mcp',
@@ -232,7 +295,7 @@ export async function readMcps(): Promise<InventoryItem[]> {
 export async function upsertMcp(name: string, canonical: CanonicalMcp): Promise<void> {
   const cfg = (await readJsonSafe<ClaudeDesktopConfig>(paths.claudeDesktopConfig)) ?? {}
   const servers = { ...(cfg.mcpServers ?? {}) }
-  servers[name] = canonicalToRaw(canonical)
+  servers[name] = canonicalToRawForClaudeDesktop(canonical)
   cfg.mcpServers = servers
   await writeJsonAtomic(paths.claudeDesktopConfig, cfg)
 }
