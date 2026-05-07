@@ -1,8 +1,10 @@
-// Spawn `npx -y mcp-remote-client@latest <url>` to run the OAuth flow for a
-// remote MCP. The standalone client connects, opens the user's default browser
-// for sign-in, lists tools, and exits. Tokens land in
-// ~/.mcp-auth/mcp-remote-VERSION/{md5(url)}_tokens.json — the same place the
-// stdio proxy looks at runtime.
+// Spawn `npx -y -p mcp-remote@latest mcp-remote-client <url>` to run the OAuth
+// flow for a remote MCP. `mcp-remote-client` is a binary shipped inside the
+// `mcp-remote` package (there is no standalone package by that name), so we
+// fetch the package via `-p mcp-remote@latest` and invoke its client bin. The
+// client connects, opens the user's default browser for sign-in, lists tools,
+// and exits. Tokens land in ~/.mcp-auth/mcp-remote-VERSION/{md5(url)}_tokens.json
+// — the same place the stdio proxy looks at runtime.
 //
 // We only handle (a) running the flow, (b) cancelling it, (c) reading the
 // outcome from the exit code + tail of stderr.
@@ -47,7 +49,10 @@ export async function runAuthFlow(
     }
   }
 
-  const args = ['-y', 'mcp-remote-client@latest', req.url]
+  // `mcp-remote-client` is a bin inside the `mcp-remote` package, not its own
+  // package — `npx -y mcp-remote-client@latest` fails with E404. Use `-p` to
+  // fetch the package and run its named bin instead.
+  const args = ['-y', '-p', 'mcp-remote@latest', 'mcp-remote-client', req.url]
   if (req.headers) {
     for (const [k, v] of Object.entries(req.headers)) {
       args.push('--header', `${k}:${v}`)
