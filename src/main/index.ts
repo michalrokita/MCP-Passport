@@ -17,6 +17,14 @@ import {
 } from './passportFile'
 import { runAuthFlow, clearAuthFor } from './adapters/mcpAuthRunner'
 import { fillSecrets } from './fillSecrets'
+import {
+  checkNow as checkUpdateNow,
+  getCachedUpdate,
+  getCurrentVersion,
+  getPrefs as getUpdatePrefs,
+  setPrefs as setUpdatePrefs,
+  startBackgroundChecks as startUpdateChecks
+} from './updater'
 import type {
   SyncRequest,
   LibraryMcpInput,
@@ -28,7 +36,8 @@ import type {
   ImportApplyRequest,
   McpAuthRunRequest,
   McpAuthClearRequest,
-  McpFillSecretsRequest
+  McpFillSecretsRequest,
+  UpdatePrefs
 } from '../shared/types'
 
 // Track in-flight auth flows so a second invocation cancels the first.
@@ -268,6 +277,21 @@ app.whenReady().then(() => {
   ipcMain.handle('passport:mcp:fill-secrets', async (_evt, req: McpFillSecretsRequest) =>
     fillSecrets(req)
   )
+
+  // Auto-update (Phase 1: notify-only)
+  ipcMain.handle('passport:update:current-version', async () => getCurrentVersion())
+  ipcMain.handle('passport:update:get-prefs', async () => getUpdatePrefs())
+  ipcMain.handle(
+    'passport:update:set-prefs',
+    async (_evt, patch: Partial<UpdatePrefs>) => setUpdatePrefs(patch)
+  )
+  ipcMain.handle(
+    'passport:update:check-now',
+    async (_evt, opts?: { force?: boolean }) => checkUpdateNow(opts)
+  )
+  ipcMain.handle('passport:update:get-cached', async () => getCachedUpdate())
+
+  startUpdateChecks()
 
   createWindow()
 

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { IpcRendererEvent } from 'electron'
 import type {
   PassportApi,
   ScanResult,
@@ -21,7 +22,11 @@ import type {
   McpAuthRunResult,
   McpAuthClearRequest,
   McpFillSecretsRequest,
-  McpFillSecretsResult
+  McpFillSecretsResult,
+  UpdateCheckResult,
+  UpdateInfo,
+  UpdatePrefs,
+  UpdateStatusEvent
 } from '../shared/types'
 
 const api: PassportApi = {
@@ -89,7 +94,25 @@ const api: PassportApi = {
   mcpAuthClear: (req: McpAuthClearRequest) =>
     ipcRenderer.invoke('passport:mcp-auth:clear', req) as Promise<{ ok: boolean; message: string }>,
   mcpFillSecrets: (req: McpFillSecretsRequest) =>
-    ipcRenderer.invoke('passport:mcp:fill-secrets', req) as Promise<McpFillSecretsResult>
+    ipcRenderer.invoke('passport:mcp:fill-secrets', req) as Promise<McpFillSecretsResult>,
+
+  updateGetCurrentVersion: () =>
+    ipcRenderer.invoke('passport:update:current-version') as Promise<string>,
+  updateGetPrefs: () =>
+    ipcRenderer.invoke('passport:update:get-prefs') as Promise<UpdatePrefs>,
+  updateSetPrefs: (patch: Partial<UpdatePrefs>) =>
+    ipcRenderer.invoke('passport:update:set-prefs', patch) as Promise<UpdatePrefs>,
+  updateCheckNow: (opts?: { force?: boolean }) =>
+    ipcRenderer.invoke('passport:update:check-now', opts) as Promise<UpdateCheckResult>,
+  updateGetCached: () =>
+    ipcRenderer.invoke('passport:update:get-cached') as Promise<UpdateInfo | null>,
+  onUpdateStatus: (fn: (evt: UpdateStatusEvent) => void) => {
+    const handler = (_evt: IpcRendererEvent, payload: UpdateStatusEvent): void => fn(payload)
+    ipcRenderer.on('update:status', handler)
+    return () => {
+      ipcRenderer.removeListener('update:status', handler)
+    }
+  }
 }
 
 contextBridge.exposeInMainWorld('api', api)
