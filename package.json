@@ -14,7 +14,8 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "dist": "npm run build && electron-builder --mac --config electron-builder.config.cjs",
-    "dist:dir": "npm run build && electron-builder --mac --dir --config electron-builder.config.cjs"
+    "dist:dir": "npm run build && electron-builder --mac --dir --config electron-builder.config.cjs",
+    "version": "node scripts/sync-landing-version.mjs && git add index.html"
   },
   "dependencies": {
     "@iconify/react": "^5.0.2",
