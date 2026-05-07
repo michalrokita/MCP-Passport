@@ -1,15 +1,16 @@
 # Dependencies
 node_modules/
 
-# Build output
+# Build output — never committed; CI publishes to GitHub Releases.
 out/
 dist/
-build/
+release/
 
-# Release directory — only ship the Apple Silicon DMG so the website link works.
-# Everything else (intel DMG, both .zips, unpacked .app dirs, blockmaps, yml) is local-only.
-release/*
-!release/MCP-Passport-mac-arm64.dmg
+# `build/` holds electron-builder *input* resources (icon.icns, entitlements.plist,
+# dmg-background.png) — those get committed. Ignore only generated artifacts inside.
+build/icon-1024.png
+build/icon.iconset/
+build/mcp-passport.svg.png
 
 # TypeScript incremental build info
 *.tsbuildinfo
@@ -23,7 +24,7 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# Environment
+# Environment / secrets
 .env
 .env.local
 .env.*.local
@@ -38,12 +39,9 @@ Thumbs.db
 *.swp
 *.swo
 
-# Electron build artifacts (the released arm64 DMG above is re-allowed at the bottom)
+# Electron build artifacts
 *.app
 *.dmg
 *.exe
 *.deb
 *.AppImage
-
-# Re-allow the one DMG we ship — must come AFTER *.dmg above.
-!release/MCP-Passport-mac-arm64.dmg

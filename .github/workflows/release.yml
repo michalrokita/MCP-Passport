@@ -1,0 +1,76 @@
+name: Release
+
+# Tag-driven release: push a tag like `v0.1.0` and CI builds, signs (if certs are
+# configured), notarizes (if Apple credentials are configured), and uploads the
+# .dmg + .zip to a GitHub Release. The release is created as a draft if no
+# release exists for the tag yet, then `electron-builder --publish always`
+# uploads assets straight onto it.
+#
+# To enable real Apple signing, add these repo secrets in GitHub Settings →
+# Secrets and variables → Actions:
+#
+#   CSC_LINK                       base64-encoded Developer ID Application .p12
+#   CSC_KEY_PASSWORD               passphrase for that .p12
+#   APPLE_ID                       Apple ID email
+#   APPLE_APP_SPECIFIC_PASSWORD    app-specific password (appleid.apple.com)
+#   APPLE_TEAM_ID                  10-char Team ID from developer.apple.com
+#
+# Without those secrets, the workflow still completes — the build is ad-hoc
+# signed and Gatekeeper will warn on download.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write # required to create/update GitHub Releases
+
+jobs:
+  release-mac:
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build renderer + main
+        run: npm run build
+
+      - name: Build, sign, notarize, and publish to GitHub Releases
+        env:
+          # GitHub auth so electron-builder can upload to Releases.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          # Apple Developer ID signing (electron-builder reads these natively).
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+
+          # Apple notarization (electron-builder >= 24.13.0 reads these natively).
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npx electron-builder --mac --publish always --config electron-builder.config.cjs
+
+      - name: Upload artifacts (debug copy)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-builds
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/latest-mac.yml
+          if-no-files-found: warn
+          retention-days: 14
