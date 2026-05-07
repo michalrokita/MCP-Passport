@@ -154,6 +154,11 @@ export interface LibrarySkillInput {
   body: string // SKILL.md body (the main markdown content, frontmatter we'll generate)
   whenToUse?: string
   allowedTools?: string
+  // When set, the library writes this verbatim as SKILL.md and ignores the
+  // synthesized frontmatter above. Used for skills fetched from GitHub so we
+  // preserve the original frontmatter instead of round-tripping it through a
+  // lossy hand-rolled YAML serializer.
+  rawSkillMd?: string
 }
 
 export type RegistryCategory =

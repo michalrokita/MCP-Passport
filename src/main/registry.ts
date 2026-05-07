@@ -217,26 +217,26 @@ export async function addEntryToLibrary(
     }
     if (entry.kind === 'skill') {
       // For GitHub-discovered skills the body is a sentinel pointing at the raw URL.
-      let body = entry.body
-      let description = entry.description
+      // Fetch the original SKILL.md and pass it through verbatim so we don't
+      // damage frontmatter (escaped quotes, block scalars, license/version/tools
+      // fields, etc.) by re-serializing it ourselves.
+      const body = entry.body
       if (body?.startsWith('__fetch__::')) {
         const raw = body.replace('__fetch__::', '')
         const text = await fetchSkillBody(raw)
-        // Parse frontmatter to extract description if not set
-        const m = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(text)
-        if (m) {
-          const fm = m[1]
-          const dm = /\bdescription:\s*(.*)/.exec(fm)
-          if (dm && !description) description = dm[1].replace(/^["']|["']$/g, '').trim()
-          body = m[2]
-        } else {
-          body = text
-        }
+        if (!text) return { ok: false, message: 'Skill body unavailable.' }
+        await passport.addSkill({
+          name: entry.name,
+          description: entry.description,
+          body: text,
+          rawSkillMd: text
+        })
+        return { ok: true, message: `Added skill "${entry.name}" to your Passport library.` }
       }
       if (!body) return { ok: false, message: 'Skill body unavailable.' }
       await passport.addSkill({
         name: entry.name,
-        description: description,
+        description: entry.description,
         body
       })
       return { ok: true, message: `Added skill "${entry.name}" to your Passport library.` }

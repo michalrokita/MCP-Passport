@@ -192,20 +192,33 @@ export async function addSkill(input: LibrarySkillInput): Promise<string> {
   if (!safeName) throw new Error('Skill name is required')
   const dir = join(librarySkillsDir(), safeName)
   await fs.mkdir(dir, { recursive: true })
+  const skillMd =
+    input.rawSkillMd ?? buildSkillMd(safeName, input)
+  await writeTextAtomic(join(dir, 'SKILL.md'), skillMd)
+  return dir
+}
+
+// Single-quoted YAML scalars only need `'` → `''` escaping — much safer than
+// double-quoted scalars where backslashes, quotes, and unicode escapes all
+// interact. Used only when we have to synthesize frontmatter from form fields;
+// fetched skills are written verbatim via input.rawSkillMd.
+function yamlSingleQuote(s: string): string {
+  return `'${s.replace(/'/g, "''")}'`
+}
+
+function buildSkillMd(safeName: string, input: LibrarySkillInput): string {
   const fmLines = [
     '---',
     `name: ${safeName}`,
-    `description: "${(input.description ?? '').replace(/"/g, '\\"')}"`,
-    input.whenToUse ? `when_to_use: "${input.whenToUse.replace(/"/g, '\\"')}"` : null,
+    `description: ${yamlSingleQuote(input.description ?? '')}`,
+    input.whenToUse ? `when_to_use: ${yamlSingleQuote(input.whenToUse)}` : null,
     input.allowedTools ? `allowed-tools: ${input.allowedTools}` : null,
     '---',
     ''
   ]
     .filter((x): x is string => x !== null)
     .join('\n')
-  const skillMd = fmLines + (input.body ?? '')
-  await writeTextAtomic(join(dir, 'SKILL.md'), skillMd)
-  return dir
+  return fmLines + (input.body ?? '')
 }
 
 export async function removeSkill(name: string): Promise<void> {
