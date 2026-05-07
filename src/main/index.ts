@@ -122,6 +122,18 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle(
+    'passport:library:add-skill-from-path',
+    async (_evt, { name, srcDir }: { name: string; srcDir: string }) => {
+      try {
+        const dir = await passport.addSkillFromPath(name, srcDir)
+        return { ok: true, message: `Saved skill "${name}" at ${dir}.` }
+      } catch (e) {
+        return { ok: false, message: (e as Error).message }
+      }
+    }
+  )
+
+  ipcMain.handle(
     'passport:library:remove',
     async (_evt, { kind, name }: { kind: ItemKind; name: string }) => {
       try {

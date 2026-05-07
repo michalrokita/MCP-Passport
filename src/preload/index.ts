@@ -46,6 +46,11 @@ const api: PassportApi = {
       ok: boolean
       message: string
     }>,
+  libraryAddSkillFromPath: (name: string, srcDir: string) =>
+    ipcRenderer.invoke('passport:library:add-skill-from-path', { name, srcDir }) as Promise<{
+      ok: boolean
+      message: string
+    }>,
   libraryRemove: (kind: ItemKind, name: string) =>
     ipcRenderer.invoke('passport:library:remove', { kind, name }) as Promise<{
       ok: boolean

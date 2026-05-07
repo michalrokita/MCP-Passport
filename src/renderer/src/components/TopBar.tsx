@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useApp } from '../lib/store'
 import { AddToLibraryDialog } from './AddToLibraryDialog'
+import { BulkImportDialog } from './BulkImportDialog'
 import { ExportDialog } from './ExportDialog'
 import { ImportDialog } from './ImportDialog'
 
@@ -20,12 +21,36 @@ export function TopBar(): JSX.Element {
     view
   } = useApp()
   const [addOpen, setAddOpen] = useState(false)
+  const [bulkOpen, setBulkOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
 
   const projects = scan?.projects ?? []
 
   const showAdd = view === 'inventory' && (activeKind === 'mcp' || activeKind === 'skill')
+
+  // Count items that exist outside the library and aren't yet saved — that's
+  // what the "Save to library…" button would import. Mirrors the filter in
+  // BulkImportDialog.collectImportable so the badge count matches the modal.
+  const importableCount = useMemo(() => {
+    if (view !== 'inventory') return 0
+    const items = scan?.items ?? []
+    let n = 0
+    for (const it of items) {
+      if (it.kind !== 'mcp' && it.kind !== 'skill') continue
+      if (it.presences.some((p) => p.toolId === 'passport')) continue
+      const external = it.presences.filter((p) => p.toolId !== 'passport')
+      if (external.length === 0) continue
+      const isRemoteConnector = external.some(
+        (p) =>
+          p.source.kind === 'mcp' &&
+          (p.source.raw as { __remote?: boolean } | undefined)?.__remote === true
+      )
+      if (isRemoteConnector) continue
+      n++
+    }
+    return n
+  }, [scan, view])
 
   const title = (() => {
     if (view === 'browse') return 'Marketplace'
@@ -79,6 +104,15 @@ export function TopBar(): JSX.Element {
             placeholder="Search…"
             className="w-44 rounded-md border border-white/10 bg-ink-900 px-3 py-1 text-xs text-ink-100 placeholder:text-ink-500 focus:border-accent focus:outline-none"
           />
+          {view === 'inventory' && importableCount > 0 && (
+            <button
+              onClick={() => setBulkOpen(true)}
+              title="Save all MCPs and skills already configured in your tools to the Passport library — pick which ones in the next step"
+              className="btn btn-outline shrink-0 whitespace-nowrap text-xs"
+            >
+              Save to library… ({importableCount})
+            </button>
+          )}
           {showAdd && (
             <button
               onClick={() => setAddOpen(true)}
@@ -115,6 +149,7 @@ export function TopBar(): JSX.Element {
       {addOpen && (
         <AddToLibraryDialog kind={activeKind} onClose={() => setAddOpen(false)} />
       )}
+      {bulkOpen && <BulkImportDialog onClose={() => setBulkOpen(false)} />}
       {exportOpen && <ExportDialog onClose={() => setExportOpen(false)} />}
       {importOpen && <ImportDialog onClose={() => setImportOpen(false)} />}
     </>

@@ -221,6 +221,17 @@ function buildSkillMd(safeName: string, input: LibrarySkillInput): string {
   return fmLines + (input.body ?? '')
 }
 
+// Copy an existing skill directory (with all of its files — SKILL.md, scripts,
+// resources, …) into the library, preserving the original frontmatter.
+// Used by the bulk import-from-tools flow.
+export async function addSkillFromPath(name: string, srcDir: string): Promise<string> {
+  const safeName = name.replace(/[^a-zA-Z0-9_-]+/g, '-').toLowerCase()
+  if (!safeName) throw new Error('Skill name is required')
+  const dest = join(librarySkillsDir(), safeName)
+  await copyDirRecursive(srcDir, dest)
+  return dest
+}
+
 export async function removeSkill(name: string): Promise<void> {
   const dir = join(librarySkillsDir(), name)
   await fs.rm(dir, { recursive: true, force: true })

@@ -231,6 +231,10 @@ export interface PassportApi {
   // Library management
   libraryAddMcp: (input: LibraryMcpInput) => Promise<{ ok: boolean; message: string }>
   libraryAddSkill: (input: LibrarySkillInput) => Promise<{ ok: boolean; message: string }>
+  libraryAddSkillFromPath: (
+    name: string,
+    srcDir: string
+  ) => Promise<{ ok: boolean; message: string }>
   libraryRemove: (kind: ItemKind, name: string) => Promise<{ ok: boolean; message: string }>
 
   // Registry / store
