@@ -2,6 +2,7 @@ import { useApp } from '../lib/store'
 import type { ToolId } from '../../../shared/types'
 import { ToolIcon } from './ToolIcon'
 import { openInFinder } from '../lib/api'
+import { UpdateFooter } from './UpdateFooter'
 
 export function Sidebar(): JSX.Element {
   const { scan, toolFilter, setToolFilter, view, setView, activeKind, setActiveKind } = useApp()
@@ -121,9 +122,10 @@ export function Sidebar(): JSX.Element {
         </ul>
       </nav>
 
-      <div className="mt-auto px-4 py-4 text-[11px] text-ink-500">
+      <div className="mt-auto px-4 py-3 text-[11px] text-ink-500">
         {scan && <>Last scan {new Date(scan.scannedAt).toLocaleTimeString()}</>}
       </div>
+      <UpdateFooter />
     </aside>
   )
 }

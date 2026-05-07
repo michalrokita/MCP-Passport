@@ -252,7 +252,51 @@ export interface PassportApi {
 
   // Fill in env-var / header secrets for an MCP and propagate to all tools that have it.
   mcpFillSecrets: (req: McpFillSecretsRequest) => Promise<McpFillSecretsResult>
+
+  // Auto-update (Phase 1: notify-only — no in-app install yet, see README "About Gatekeeper")
+  updateGetCurrentVersion: () => Promise<string>
+  updateGetPrefs: () => Promise<UpdatePrefs>
+  updateSetPrefs: (patch: Partial<UpdatePrefs>) => Promise<UpdatePrefs>
+  updateCheckNow: (opts?: { force?: boolean }) => Promise<UpdateCheckResult>
+  updateGetCached: () => Promise<UpdateInfo | null>
+  /** Subscribe to update status changes. Returns an unsubscribe function. */
+  onUpdateStatus: (fn: (evt: UpdateStatusEvent) => void) => () => void
 }
+
+// === Auto-update (Phase 1: notify-only) ===
+
+export interface UpdateInfo {
+  currentVersion: string
+  latestVersion: string
+  releaseUrl: string
+  releaseName: string
+  publishedAt: string
+  releaseNotes: string
+}
+
+export interface UpdatePrefs {
+  /** When true, the main process polls GitHub Releases on a slow interval. */
+  autoCheck: boolean
+  /** Latest version the user explicitly chose to skip; suppresses the banner for that version only. */
+  skippedVersion: string | null
+  /** ISO timestamp of the last successful check, or null. */
+  lastCheckedAt: string | null
+}
+
+export interface UpdateCheckResult {
+  ok: boolean
+  message?: string
+  hasUpdate?: boolean
+  /** True if the user previously skipped this exact version. */
+  suppressed?: boolean
+  currentVersion?: string
+  latestVersion?: string
+  info?: UpdateInfo
+}
+
+export type UpdateStatusEvent =
+  | { hasUpdate: false }
+  | { hasUpdate: true; suppressed: boolean; info: UpdateInfo }
 
 // === Auth flow ===
 
