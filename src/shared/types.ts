@@ -6,6 +6,7 @@ export type ToolId =
   | 'claude-code'
   | 'codex-cli'
   | 'codex-desktop'
+  | 'cursor'
 
 export type ItemKind = 'mcp' | 'skill' | 'plugin' | 'agent'
 
@@ -91,6 +92,8 @@ export type McpLocator =
   | { kind: 'claude-code-user' } // ~/.claude.json mcpServers
   | { kind: 'claude-code-project'; projectPath: string } // .mcp.json in repo
   | { kind: 'codex' } // ~/.codex/config.toml [mcp_servers.X]
+  | { kind: 'cursor-user' } // ~/.cursor/mcp.json mcpServers
+  | { kind: 'cursor-project'; projectPath: string } // <project>/.cursor/mcp.json
   | { kind: 'passport-library' } // local library inside MCP Passport
 
 export interface ScanResult {

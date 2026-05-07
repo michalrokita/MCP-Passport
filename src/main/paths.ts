@@ -49,6 +49,20 @@ export const paths = {
   ),
   claudeDesktopApp: '/Applications/Claude.app',
 
+  // Cursor (VS Code fork)
+  cursorDir: join(HOME, '.cursor'),
+  cursorUserMcpJson: join(HOME, '.cursor', 'mcp.json'),
+  cursorUserSkillsDir: join(HOME, '.cursor', 'skills-cursor'),
+  cursorWorkspaceStorage: join(
+    HOME,
+    'Library',
+    'Application Support',
+    'Cursor',
+    'User',
+    'workspaceStorage'
+  ),
+  cursorApp: '/Applications/Cursor.app',
+
   // Codex CLI / Desktop (shared)
   codexHome: join(HOME, '.codex'),
   codexConfig: join(HOME, '.codex', 'config.toml'),
@@ -91,4 +105,16 @@ export function projectCodexAgentsDir(projectPath: string): string {
 
 export function projectCodexAgentsMd(projectPath: string): string {
   return join(projectPath, 'AGENTS.md')
+}
+
+export function projectCursorDir(projectPath: string): string {
+  return join(projectPath, '.cursor')
+}
+
+export function projectCursorMcpJson(projectPath: string): string {
+  return join(projectPath, '.cursor', 'mcp.json')
+}
+
+export function projectCursorSkillsDir(projectPath: string): string {
+  return join(projectPath, '.cursor', 'skills-cursor')
 }

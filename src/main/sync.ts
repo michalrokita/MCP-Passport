@@ -3,6 +3,7 @@ import { join } from 'path'
 import * as claudeDesktop from './adapters/claudeDesktop'
 import * as claudeCode from './adapters/claudeCode'
 import * as codex from './adapters/codex'
+import * as cursor from './adapters/cursor'
 import * as passport from './adapters/passport'
 import { scanAll } from './scanner'
 
@@ -112,6 +113,15 @@ async function syncMcp(name: string, canonical: CanonicalMcp, target: SyncTarget
     await codex.upsertMcp(name, canonical)
     return `Wrote MCP "${name}" to ~/.codex/config.toml (shared across Codex CLI + Desktop).`
   }
+  if (t === 'cursor') {
+    if (target.scope === 'global') {
+      await cursor.upsertMcpUser(name, canonical)
+      return `Wrote MCP "${name}" to ~/.cursor/mcp.json.`
+    }
+    if (!target.projectPath) throw new Error('Project path required for project-scope MCP.')
+    await cursor.upsertMcpProject(target.projectPath, name, canonical)
+    return `Wrote MCP "${name}" to ${target.projectPath}/.cursor/mcp.json.`
+  }
   throw new Error(`Unknown target tool ${t}`)
 }
 
@@ -135,6 +145,15 @@ async function syncSkill(name: string, srcDir: string, target: SyncTarget): Prom
     if (target.scope !== 'global')
       throw new Error('Codex user skills are stored at ~/.agents/skills/ (global).')
     const dest = await codex.copySkillToUser(srcDir, name)
+    return `Copied skill "${name}" to ${dest}.`
+  }
+  if (t === 'cursor') {
+    if (target.scope === 'global') {
+      const dest = await cursor.copySkillToUser(srcDir, name)
+      return `Copied skill "${name}" to ${dest}.`
+    }
+    if (!target.projectPath) throw new Error('Project path required.')
+    const dest = await cursor.copySkillToProject(target.projectPath, srcDir, name)
     return `Copied skill "${name}" to ${dest}.`
   }
   if (t === 'claude-desktop') {

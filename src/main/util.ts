@@ -87,11 +87,16 @@ export function parseFrontmatter(content: string): {
   frontmatter: Record<string, unknown>
   body: string
 } {
-  const m = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(content)
+  // Allow optional carriage-returns so files saved with CRLF line endings still
+  // parse cleanly (otherwise the closing `---` match fails and the whole
+  // frontmatter falls into `body`).
+  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(content)
   if (!m) return { frontmatter: {}, body: content }
   const fm: Record<string, unknown> = {}
-  // Tiny YAML-ish parser supporting key: value and "quoted" values.
-  const lines = m[1].split('\n')
+  // Tiny YAML-ish parser supporting key: value, "quoted" values, and folded /
+  // literal block scalars (`>`, `>-`, `|`, `|-`, `|+`). Block scalars are
+  // common in Cursor and Anthropic skills' SKILL.md descriptions.
+  const lines = m[1].replace(/\r/g, '').split('\n')
   let i = 0
   while (i < lines.length) {
     const line = lines[i]
@@ -102,8 +107,39 @@ export function parseFrontmatter(content: string): {
     const kv = /^([A-Za-z0-9_-]+)\s*:\s*(.*)$/.exec(line)
     if (kv) {
       const key = kv[1]
-      let value: unknown = kv[2].trim()
-      // Strip surrounding quotes
+      const inline = kv[2].trim()
+      const blockMatch = /^([>|])([+-]?)$/.exec(inline)
+      if (blockMatch) {
+        // Block scalar — collect indented continuation lines until we hit a
+        // line that's empty or de-indented to column 0.
+        const fold = blockMatch[1] === '>' // `>` folds newlines into spaces, `|` keeps them
+        const collected: string[] = []
+        let j = i + 1
+        while (j < lines.length) {
+          const cont = lines[j]
+          if (!cont.trim()) {
+            // Blank line inside block — preserve as paragraph break for `|`,
+            // but for `>` it becomes a single newline. Stop if the NEXT
+            // non-blank line is unindented (means block ended).
+            let k = j + 1
+            while (k < lines.length && !lines[k].trim()) k++
+            if (k >= lines.length || /^[A-Za-z0-9_-]+\s*:/.test(lines[k])) break
+            collected.push('')
+            j++
+            continue
+          }
+          if (!/^\s/.test(cont)) break
+          collected.push(cont.replace(/^\s+/, ''))
+          j++
+        }
+        const joined = fold
+          ? collected.join(' ').replace(/ +/g, ' ').trim()
+          : collected.join('\n').trim()
+        fm[key] = joined
+        i = j
+        continue
+      }
+      let value: unknown = inline
       if (typeof value === 'string') {
         if (
           (value.startsWith('"') && value.endsWith('"')) ||

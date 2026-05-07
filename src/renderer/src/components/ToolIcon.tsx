@@ -18,6 +18,16 @@ function OpenAIMark({ className = '' }: { className?: string }): JSX.Element {
   )
 }
 
+function CursorMark({ className = '' }: { className?: string }): JSX.Element {
+  // Stylized "C" — Cursor's brand mark is a hexagonal wedge but trademark-safe
+  // for our purposes is a simple letter glyph in their accent gradient.
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
+      <path d="M11.99 2 3 7.19v9.62L11.99 22 21 16.81V7.19L11.99 2zm0 2.32 7 4.04v7.28l-7 4.04-7-4.04V8.36l7-4.04zm0 2.31L7 9.51v4.98l4.99 2.88V9.5l4.01-2.32-4.01-1.55z" />
+    </svg>
+  )
+}
+
 function CliBadge(): JSX.Element {
   return (
     <span className="absolute -bottom-0.5 -right-0.5 inline-flex h-3 w-3 items-center justify-center rounded-sm bg-ink-950 text-[7px] font-bold leading-none text-ink-100 ring-1 ring-ink-700">
@@ -42,8 +52,9 @@ interface ToolIconProps {
 export function ToolIcon({ toolId, className = 'h-5 w-5', decorate = true }: ToolIconProps): JSX.Element {
   const isClaude = toolId === 'claude-code' || toolId === 'claude-desktop'
   const isCodex = toolId === 'codex-cli' || toolId === 'codex-desktop'
+  const isCursor = toolId === 'cursor'
   const isCli = toolId === 'claude-code' || toolId === 'codex-cli'
-  const isDesktop = toolId === 'claude-desktop' || toolId === 'codex-desktop'
+  const isDesktop = toolId === 'claude-desktop' || toolId === 'codex-desktop' || toolId === 'cursor'
 
   return (
     <span className={`relative inline-flex shrink-0 items-center justify-center rounded-md ${className}`}>
@@ -63,6 +74,11 @@ export function ToolIcon({ toolId, className = 'h-5 w-5', decorate = true }: Too
       {isCodex && (
         <span className="flex h-full w-full items-center justify-center rounded-md bg-ink-100 text-ink-950">
           <OpenAIMark className="h-[68%] w-[68%]" />
+        </span>
+      )}
+      {isCursor && (
+        <span className="flex h-full w-full items-center justify-center rounded-md bg-gradient-to-br from-ink-700 to-ink-900 text-ink-100">
+          <CursorMark className="h-[68%] w-[68%]" />
         </span>
       )}
       {decorate && isCli && <CliBadge />}

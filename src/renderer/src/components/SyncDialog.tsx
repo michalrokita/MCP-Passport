@@ -19,7 +19,8 @@ const TOOL_ORDER: ToolId[] = [
   'claude-code',
   'claude-desktop',
   'codex-cli',
-  'codex-desktop'
+  'codex-desktop',
+  'cursor'
 ]
 
 export function SyncDialog({
@@ -267,14 +268,14 @@ function shortPath(p: string): string {
 function supportsForKind(kind: InventoryItem['kind']): { global: ToolId[]; project: ToolId[] } {
   if (kind === 'mcp') {
     return {
-      global: ['passport', 'claude-code', 'claude-desktop', 'codex-cli', 'codex-desktop'],
-      project: ['claude-code']
+      global: ['passport', 'claude-code', 'claude-desktop', 'codex-cli', 'codex-desktop', 'cursor'],
+      project: ['claude-code', 'cursor']
     }
   }
   if (kind === 'skill') {
     return {
-      global: ['passport', 'claude-code', 'codex-cli', 'codex-desktop'],
-      project: ['claude-code']
+      global: ['passport', 'claude-code', 'codex-cli', 'codex-desktop', 'cursor'],
+      project: ['claude-code', 'cursor']
     }
   }
   if (kind === 'plugin') {

@@ -10,7 +10,11 @@
 import { promises as fs } from 'fs'
 import { homedir } from 'os'
 import { dirname, join, relative } from 'path'
-import { paths, projectClaudeSkillsDir } from './paths'
+import {
+  paths,
+  projectClaudeSkillsDir,
+  projectCursorSkillsDir
+} from './paths'
 import { scanAll } from './scanner'
 import { bytesToBundle, decryptBundle } from './passportFile'
 import { pathExists } from './util'
@@ -19,6 +23,7 @@ import { mcpUrlHash } from './mcpUrlHash'
 import * as claudeDesktop from './adapters/claudeDesktop'
 import * as claudeCode from './adapters/claudeCode'
 import * as codex from './adapters/codex'
+import * as cursor from './adapters/cursor'
 import * as passport from './adapters/passport'
 import type {
   CanonicalMcp,
@@ -195,6 +200,18 @@ async function writeToolMcp(
     await codex.upsertMcp(name, canonical)
     return `Wrote MCP "${name}" to ~/.codex/config.toml.`
   }
+  if (toolId === 'cursor') {
+    if (scope === 'global') {
+      await cursor.upsertMcpUser(name, canonical)
+      return `Wrote MCP "${name}" to ~/.cursor/mcp.json.`
+    }
+    if (!projectPath) throw new Error('Project path missing for project-scoped MCP.')
+    if (!(await pathExists(projectPath))) {
+      throw new Error(`Project path does not exist on this machine: ${projectPath}`)
+    }
+    await cursor.upsertMcpProject(projectPath, name, canonical)
+    return `Wrote MCP "${name}" to ${projectPath}/.cursor/mcp.json.`
+  }
   if (toolId === 'passport') {
     await passport.addMcp({ name, canonical })
     return `Added MCP "${name}" to your Passport library.`
@@ -219,6 +236,14 @@ async function toolSkillDestination(
   if (toolId === 'codex-cli' || toolId === 'codex-desktop') {
     if (scope !== 'global') throw new Error('Codex skills are global only.')
     return join(paths.codexUserSkillsDir, name)
+  }
+  if (toolId === 'cursor') {
+    if (scope === 'global') return join(paths.cursorUserSkillsDir, name)
+    if (!projectPath) throw new Error('Project path missing for project-scoped skill.')
+    if (!(await pathExists(projectPath))) {
+      throw new Error(`Project path does not exist on this machine: ${projectPath}`)
+    }
+    return join(projectCursorSkillsDir(projectPath), name)
   }
   if (toolId === 'passport') {
     return join(passportLibraryDir(), 'skills', name)

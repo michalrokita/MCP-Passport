@@ -2,6 +2,7 @@ import { promises as fs } from 'fs'
 import * as claudeDesktop from './adapters/claudeDesktop'
 import * as claudeCode from './adapters/claudeCode'
 import * as codex from './adapters/codex'
+import * as cursor from './adapters/cursor'
 import * as passport from './adapters/passport'
 import { scanAll } from './scanner'
 import type { Scope, ToolId } from '../shared/types'
@@ -32,6 +33,9 @@ export async function removeItemFromTool(
       else if (loc.kind === 'claude-code-project')
         await claudeCode.removeMcpProject(loc.projectPath, item.name)
       else if (loc.kind === 'codex') await codex.removeMcp(item.name)
+      else if (loc.kind === 'cursor-user') await cursor.removeMcpUser(item.name)
+      else if (loc.kind === 'cursor-project')
+        await cursor.removeMcpProject(loc.projectPath, item.name)
       else if (loc.kind === 'passport-library') await passport.removeMcp(item.name)
       return { ok: true, message: `Removed MCP "${item.name}" from ${toolId}.` }
     }

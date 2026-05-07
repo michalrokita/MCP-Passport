@@ -1,6 +1,7 @@
 import * as claudeDesktop from './adapters/claudeDesktop'
 import * as claudeCode from './adapters/claudeCode'
 import * as codex from './adapters/codex'
+import * as cursor from './adapters/cursor'
 import * as passport from './adapters/passport'
 import { listAuthedUrlHashes } from './adapters/mcpAuth'
 import { mcpUrlHash } from './mcpUrlHash'
@@ -12,16 +13,29 @@ import type {
 } from '../shared/types'
 
 export async function scanAll(): Promise<ScanResult> {
-  const [passportPres, claudeDesktopPres, claudeCodePres, codexCliPres, codexDesktopPres] =
-    await Promise.all([
-      passport.detect(),
-      claudeDesktop.detect(),
-      claudeCode.detect(),
-      codex.detectCodexCli(),
-      codex.detectCodexDesktop()
-    ])
+  const [
+    passportPres,
+    claudeDesktopPres,
+    claudeCodePres,
+    codexCliPres,
+    codexDesktopPres,
+    cursorPres
+  ] = await Promise.all([
+    passport.detect(),
+    claudeDesktop.detect(),
+    claudeCode.detect(),
+    codex.detectCodexCli(),
+    codex.detectCodexDesktop(),
+    cursor.detect()
+  ])
 
-  const projects = await claudeCode.getProjects()
+  // Project list is a de-duplicated union of Claude Code's known projects and
+  // Cursor's recent workspaces. Either tool can have project-scoped MCPs.
+  const [ccProjects, cursorProjects] = await Promise.all([
+    claudeCode.getProjects(),
+    cursor.getProjects()
+  ])
+  const projects = mergeProjects(ccProjects, cursorProjects)
   const projectInfo: ProjectInfo[] = projects
 
   // Read items from each tool.
@@ -37,7 +51,11 @@ export async function scanAll(): Promise<ScanResult> {
     ccPlugins,
     cxMcps,
     cxPlugins,
-    cxSkills
+    cxSkills,
+    curMcpsUser,
+    curMcpsProject,
+    curSkillsUser,
+    curSkillsProject
   ] = await Promise.all([
     passport.readAll(),
     claudeDesktop.readAll(),
@@ -50,7 +68,11 @@ export async function scanAll(): Promise<ScanResult> {
     claudeCode.readPlugins(projects),
     codex.readMcps('codex-cli'),
     codex.readPlugins('codex-cli'),
-    codex.readSkills('codex-cli')
+    codex.readSkills('codex-cli'),
+    cursor.readMcpsUser(),
+    cursor.readMcpsProjects(projects),
+    cursor.readSkillsUser(),
+    cursor.readSkillsProjects(projects)
   ])
 
   // Codex CLI and Codex Desktop share config — duplicate codex-cli items as codex-desktop presences too
@@ -81,7 +103,11 @@ export async function scanAll(): Promise<ScanResult> {
     ...cxSkills,
     ...cxMcpsDesktop,
     ...cxPluginsDesktop,
-    ...cxSkillsDesktop
+    ...cxSkillsDesktop,
+    ...curMcpsUser,
+    ...curMcpsProject,
+    ...curSkillsUser,
+    ...curSkillsProject
   ]
 
   const merged = mergeByKindAndName(all)
@@ -107,7 +133,8 @@ export async function scanAll(): Promise<ScanResult> {
     claudeCodePres,
     claudeDesktopPres,
     codexCliPres,
-    codexDesktopPres
+    codexDesktopPres,
+    cursorPres
   ]
 
   const authedServerHashes = await listAuthedUrlHashes()
@@ -134,6 +161,20 @@ function orderForKind(kind: string): number {
     default:
       return 9
   }
+}
+
+function mergeProjects(
+  a: { path: string; label: string }[],
+  b: { path: string; label: string }[]
+): { path: string; label: string }[] {
+  const seen = new Set<string>()
+  const out: { path: string; label: string }[] = []
+  for (const p of [...a, ...b]) {
+    if (seen.has(p.path)) continue
+    seen.add(p.path)
+    out.push(p)
+  }
+  return out.sort((x, y) => x.label.localeCompare(y.label))
 }
 
 function mergeByKindAndName(items: InventoryItem[]): InventoryItem[] {
