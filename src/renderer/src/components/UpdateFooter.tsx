@@ -19,7 +19,7 @@ export function UpdateFooter(): JSX.Element | null {
   if (!currentVersion || !prefs) return null
 
   return (
-    <div className="space-y-1.5 border-t border-white/5 px-4 pb-3 pt-3 text-[11px] text-ink-500">
+    <div className="titlebar-no-drag space-y-1.5 border-t border-white/5 px-4 pb-3 pt-3 text-[11px] text-ink-500">
       <div className="flex items-center justify-between gap-2">
         <span className="text-ink-400">v{currentVersion}</span>
         {available ? (
