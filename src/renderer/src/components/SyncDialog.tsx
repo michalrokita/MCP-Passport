@@ -71,7 +71,6 @@ export function SyncDialog({
         targets,
         includeEnv: true
       })
-      setOutcomes(res)
       const okCount = res.filter((r) => r.ok).length
       const fail = res.length - okCount
       toast.show(
@@ -81,6 +80,11 @@ export function SyncDialog({
         fail === 0 ? 'ok' : 'warn'
       )
       void refresh()
+      if (fail === 0) {
+        onClose()
+        return
+      }
+      setOutcomes(res)
     } catch (e) {
       toast.show(`Sync failed: ${(e as Error).message}`, 'error')
     } finally {
@@ -94,7 +98,7 @@ export function SyncDialog({
       onClick={onClose}
     >
       <div
-        className="surface w-full max-w-2xl"
+        className="surface flex max-h-[85vh] w-full max-w-2xl flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between border-b border-white/5 px-5 py-3">
@@ -107,7 +111,7 @@ export function SyncDialog({
           </button>
         </header>
 
-        <div className="px-5 py-4">
+        <div className="flex-1 overflow-y-auto px-5 py-4">
           <div className="text-xs font-semibold uppercase tracking-wider text-ink-500">From</div>
           <div className="mt-2 space-y-1.5">
             {item.presences.map((p, i) => (
