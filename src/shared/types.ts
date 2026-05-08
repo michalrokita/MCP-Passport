@@ -105,6 +105,10 @@ export interface ScanResult {
   // (i.e. a `{hash}_tokens.json` exists in `~/.mcp-auth/mcp-remote-VERSION/`).
   // The renderer computes the same hash for each MCP's URL and matches.
   authedServerHashes: string[]
+  // md5 hashes of MCP URLs that have been probed and confirmed to NOT require
+  // OAuth (server responded 2xx/3xx or non-401 4xx to an unauthenticated probe).
+  // The renderer uses this to hide the "Sign in" button for public servers.
+  noAuthRequiredHashes: string[]
 }
 
 export interface SyncSource {

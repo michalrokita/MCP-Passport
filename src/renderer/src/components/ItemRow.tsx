@@ -61,9 +61,14 @@ export function ItemRow({
 
   // Auth state for remote MCPs (matched by md5 hash of canonical.url).
   const authedServerHashes = useApp((s) => s.scan?.authedServerHashes ?? [])
+  const noAuthRequiredHashes = useApp((s) => s.scan?.noAuthRequiredHashes ?? [])
   const authedSet = new Set(authedServerHashes)
+  const noAuthSet = new Set(noAuthRequiredHashes)
   const authed = item.presences.some(
     (p) => p.source.kind === 'mcp' && p.source.urlHash && authedSet.has(p.source.urlHash)
+  )
+  const knownNoAuth = item.presences.some(
+    (p) => p.source.kind === 'mcp' && p.source.urlHash && noAuthSet.has(p.source.urlHash)
   )
 
   // First remote (http/sse + URL) MCP presence — single source of auth handle.
@@ -79,7 +84,8 @@ export function ItemRow({
   const hasStaticAuth =
     !!remoteCanonical?.headers &&
     Object.keys(remoteCanonical.headers).some((k) => k.toLowerCase() === 'authorization')
-  const needsAuth = !!remoteCanonical && !authed && !hasStaticAuth && item.kind === 'mcp'
+  const needsAuth =
+    !!remoteCanonical && !authed && !hasStaticAuth && !knownNoAuth && item.kind === 'mcp'
 
   // Missing secrets: env keys / headers declared but blank.
   const missingSecrets = item.kind === 'mcp' ? findMissingSecrets(item) : []
