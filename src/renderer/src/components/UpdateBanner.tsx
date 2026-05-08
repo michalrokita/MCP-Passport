@@ -35,7 +35,8 @@ export function UpdateBanner(): JSX.Element | null {
 
   return (
     <div className="shrink-0 border-b border-accent/30 bg-accent/10 text-sm text-ink-50">
-      <div className="flex items-center gap-3 px-4 py-2">
+      {/* pl-24 leaves room for the macOS traffic-light overlay (matches TopBar). */}
+      <div className="flex items-center gap-3 py-2 pl-24 pr-4">
         <span
           aria-hidden
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent/30 text-[13px]"
