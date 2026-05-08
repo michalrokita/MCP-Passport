@@ -7,6 +7,7 @@ import { Browse } from './components/Browse'
 import { Toaster } from './components/Toaster'
 import { KindFilter } from './components/KindFilter'
 import { UpdateBanner } from './components/UpdateBanner'
+import { WhatsNewDialog } from './components/WhatsNewDialog'
 
 export default function App(): JSX.Element {
   const { refresh, scan, loading, error, view } = useApp()
@@ -56,6 +57,7 @@ export default function App(): JSX.Element {
         </div>
       </div>
       <Toaster />
+      <WhatsNewDialog />
     </div>
   )
 }

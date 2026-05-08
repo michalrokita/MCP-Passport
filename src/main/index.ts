@@ -19,9 +19,12 @@ import { runAuthFlow, clearAuthFor } from './adapters/mcpAuthRunner'
 import { fillSecrets } from './fillSecrets'
 import {
   checkNow as checkUpdateNow,
+  detectUpgrade as detectUpdateUpgrade,
   getCachedUpdate,
   getCurrentVersion,
   getPrefs as getUpdatePrefs,
+  getReleaseNotesForVersion as getUpdateReleaseNotesForVersion,
+  markVersionSeen as markUpdateVersionSeen,
   setPrefs as setUpdatePrefs,
   startBackgroundChecks as startUpdateChecks
 } from './updater'
@@ -290,6 +293,12 @@ app.whenReady().then(() => {
     async (_evt, opts?: { force?: boolean }) => checkUpdateNow(opts)
   )
   ipcMain.handle('passport:update:get-cached', async () => getCachedUpdate())
+  ipcMain.handle('passport:update:detect-upgrade', async () => detectUpdateUpgrade())
+  ipcMain.handle(
+    'passport:update:get-release-notes-for-version',
+    async (_evt, version: string) => getUpdateReleaseNotesForVersion(version)
+  )
+  ipcMain.handle('passport:update:mark-version-seen', async () => markUpdateVersionSeen())
 
   startUpdateChecks()
 

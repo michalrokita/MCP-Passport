@@ -58,6 +58,14 @@ export const useApp = create<AppState>((set) => ({
   setView: (view) => set({ view })
 }))
 
+interface WhatsNewState {
+  version: string
+  fromVersion: string | null
+  notes: string
+  releaseUrl: string
+  releaseName: string
+}
+
 interface UpdateState {
   /** Latest known update offer from the main process, or null when current. */
   available: UpdateInfo | null
@@ -69,6 +77,10 @@ interface UpdateState {
   currentVersion: string | null
   /** True while `Check now` is in flight. */
   checking: boolean
+  /** True when the banner's "What's new" section is expanded. Session-only. */
+  notesExpanded: boolean
+  /** Set after a post-upgrade detection succeeds; null when no dialog should show. */
+  whatsNew: WhatsNewState | null
 
   initialize: () => Promise<() => void>
   checkNow: (opts?: { force?: boolean }) => Promise<void>
@@ -76,6 +88,9 @@ interface UpdateState {
   skipCurrent: () => Promise<void>
   unskip: () => Promise<void>
   dismiss: () => void
+  toggleNotes: () => void
+  /** User dismissed the post-install dialog — persist `lastSeenVersion = current`. */
+  dismissWhatsNew: () => Promise<void>
 }
 
 export const useUpdate = create<UpdateState>((set, get) => ({
@@ -85,12 +100,15 @@ export const useUpdate = create<UpdateState>((set, get) => ({
   prefs: null,
   currentVersion: null,
   checking: false,
+  notesExpanded: false,
+  whatsNew: null,
 
   initialize: async () => {
-    const [version, prefs, cached] = await Promise.all([
+    const [version, prefs, cached, upgrade] = await Promise.all([
       api.updateGetCurrentVersion(),
       api.updateGetPrefs(),
-      api.updateGetCached()
+      api.updateGetCached(),
+      api.updateDetectUpgrade()
     ])
     set({
       currentVersion: version,
@@ -98,15 +116,39 @@ export const useUpdate = create<UpdateState>((set, get) => ({
       available: cached,
       suppressed: !!cached && prefs.skippedVersion === cached.latestVersion
     })
+
+    // If we just upgraded, fetch release notes for the running version and show
+    // the dialog. We only mark-seen after the user dismisses, so a fetch failure
+    // (offline) just defers the dialog to the next launch — no false positives.
+    if (upgrade.upgraded) {
+      void api.updateGetReleaseNotesForVersion(upgrade.toVersion).then((res) => {
+        if (!res.ok || !res.notes) return
+        set({
+          whatsNew: {
+            version: upgrade.toVersion,
+            fromVersion: upgrade.fromVersion,
+            notes: res.notes,
+            releaseUrl: res.releaseUrl ?? '',
+            releaseName: res.releaseName ?? `v${upgrade.toVersion}`
+          }
+        })
+      })
+    }
+
     return api.onUpdateStatus((evt) => {
       if (!evt.hasUpdate) {
-        set({ available: null, suppressed: false })
+        set({ available: null, suppressed: false, notesExpanded: false })
         return
       }
       const prev = get().available
-      // Reset session-dismiss when a *new* version arrives.
-      const dismissed = prev?.latestVersion === evt.info.latestVersion ? get().dismissed : false
-      set({ available: evt.info, suppressed: evt.suppressed, dismissed })
+      // Reset session-dismiss + collapse notes when a *new* version arrives.
+      const isNewVersion = prev?.latestVersion !== evt.info.latestVersion
+      set({
+        available: evt.info,
+        suppressed: evt.suppressed,
+        dismissed: isNewVersion ? false : get().dismissed,
+        notesExpanded: isNewVersion ? false : get().notesExpanded
+      })
     })
   },
 
@@ -137,5 +179,13 @@ export const useUpdate = create<UpdateState>((set, get) => ({
     set({ prefs, suppressed: false, dismissed: false })
   },
 
-  dismiss: () => set({ dismissed: true })
+  dismiss: () => set({ dismissed: true }),
+
+  toggleNotes: () => set({ notesExpanded: !get().notesExpanded }),
+
+  dismissWhatsNew: async () => {
+    set({ whatsNew: null })
+    const prefs = await api.updateMarkVersionSeen()
+    set({ prefs })
+  }
 }))

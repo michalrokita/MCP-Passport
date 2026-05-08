@@ -26,7 +26,9 @@ import type {
   UpdateCheckResult,
   UpdateInfo,
   UpdatePrefs,
-  UpdateStatusEvent
+  UpdateStatusEvent,
+  UpgradeInfo,
+  ReleaseNotesResult
 } from '../shared/types'
 
 const api: PassportApi = {
@@ -106,6 +108,15 @@ const api: PassportApi = {
     ipcRenderer.invoke('passport:update:check-now', opts) as Promise<UpdateCheckResult>,
   updateGetCached: () =>
     ipcRenderer.invoke('passport:update:get-cached') as Promise<UpdateInfo | null>,
+  updateDetectUpgrade: () =>
+    ipcRenderer.invoke('passport:update:detect-upgrade') as Promise<UpgradeInfo>,
+  updateGetReleaseNotesForVersion: (version: string) =>
+    ipcRenderer.invoke(
+      'passport:update:get-release-notes-for-version',
+      version
+    ) as Promise<ReleaseNotesResult>,
+  updateMarkVersionSeen: () =>
+    ipcRenderer.invoke('passport:update:mark-version-seen') as Promise<UpdatePrefs>,
   onUpdateStatus: (fn: (evt: UpdateStatusEvent) => void) => {
     const handler = (_evt: IpcRendererEvent, payload: UpdateStatusEvent): void => fn(payload)
     ipcRenderer.on('update:status', handler)

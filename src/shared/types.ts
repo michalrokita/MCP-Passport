@@ -277,6 +277,14 @@ export interface PassportApi {
   updateGetCached: () => Promise<UpdateInfo | null>
   /** Subscribe to update status changes. Returns an unsubscribe function. */
   onUpdateStatus: (fn: (evt: UpdateStatusEvent) => void) => () => void
+
+  // What's-new flow — release notes from GitHub displayed before/after upgrade.
+  /** Detect whether the running version differs from the last one the user saw. */
+  updateDetectUpgrade: () => Promise<UpgradeInfo>
+  /** Fetch release notes for a specific tag. */
+  updateGetReleaseNotesForVersion: (version: string) => Promise<ReleaseNotesResult>
+  /** Persist `lastSeenVersion = current` so the post-upgrade dialog doesn't fire again. */
+  updateMarkVersionSeen: () => Promise<UpdatePrefs>
 }
 
 // === Auto-update (Phase 1: notify-only) ===
@@ -297,6 +305,34 @@ export interface UpdatePrefs {
   skippedVersion: string | null
   /** ISO timestamp of the last successful check, or null. */
   lastCheckedAt: string | null
+  /**
+   * Last version the user actually saw the "What's new" dialog for. When the
+   * running version differs from this, we show the dialog once. Null on a
+   * fresh install (so the dialog doesn't fire on first launch ever).
+   */
+  lastSeenVersion: string | null
+}
+
+/** Result of comparing the running version to `lastSeenVersion`. */
+export interface UpgradeInfo {
+  /** True if the user just upgraded — i.e., a previous version's prefs exist and don't match the running version. */
+  upgraded: boolean
+  /** Previous `lastSeenVersion`, or null if there wasn't one. */
+  fromVersion: string | null
+  /** Current running version. */
+  toVersion: string
+}
+
+export interface ReleaseNotesResult {
+  ok: boolean
+  message?: string
+  /** Markdown body from the GitHub release. */
+  notes?: string
+  /** URL of the release page on GitHub. */
+  releaseUrl?: string
+  /** Display name of the release (e.g. "0.3.0" or "v0.3 — what's new"). */
+  releaseName?: string
+  publishedAt?: string
 }
 
 export interface UpdateCheckResult {
