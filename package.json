@@ -1,6 +1,6 @@
 {
   "name": "mcp-passport",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Streamline MCP, skill, and plugin management across Claude and Codex tools.",
   "main": "out/main/index.js",
   "private": true,
