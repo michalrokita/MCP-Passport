@@ -33,6 +33,8 @@ export async function removeItemFromTool(
       else if (loc.kind === 'claude-code-project')
         await claudeCode.removeMcpProject(loc.projectPath, item.name)
       else if (loc.kind === 'codex') await codex.removeMcp(item.name)
+      else if (loc.kind === 'codex-project')
+        await codex.removeMcpProject(loc.projectPath, item.name)
       else if (loc.kind === 'cursor-user') await cursor.removeMcpUser(item.name)
       else if (loc.kind === 'cursor-project')
         await cursor.removeMcpProject(loc.projectPath, item.name)

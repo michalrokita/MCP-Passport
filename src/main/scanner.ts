@@ -6,10 +6,13 @@ import * as passport from './adapters/passport'
 import { listAuthedUrlHashes } from './adapters/mcpAuth'
 import { probeRemoteAuthRequired } from './adapters/mcpAuthProbe'
 import { mcpUrlHash } from './mcpUrlHash'
+import { findSecretsInCanonical, isExtractable, maskSecret, proposeVarName } from './secrets'
 import type {
   InventoryItem,
+  McpSecretFinding,
   ScanResult,
   ProjectInfo,
+  SecretLocation,
   ToolPresence
 } from '../shared/types'
 
@@ -30,13 +33,15 @@ export async function scanAll(): Promise<ScanResult> {
     cursor.detect()
   ])
 
-  // Project list is a de-duplicated union of Claude Code's known projects and
-  // Cursor's recent workspaces. Either tool can have project-scoped MCPs.
-  const [ccProjects, cursorProjects] = await Promise.all([
+  // Project list is a de-duplicated union of Claude Code's known projects,
+  // Cursor's recent workspaces and Codex's trusted projects. Any of them can
+  // have project-scoped MCPs.
+  const [ccProjects, cursorProjects, codexProjects] = await Promise.all([
     claudeCode.getProjects(),
-    cursor.getProjects()
+    cursor.getProjects(),
+    codex.getProjects()
   ])
-  const projects = mergeProjects(ccProjects, cursorProjects)
+  const projects = mergeProjects(ccProjects, cursorProjects, codexProjects)
   const projectInfo: ProjectInfo[] = projects
 
   // Read items from each tool.
@@ -51,6 +56,7 @@ export async function scanAll(): Promise<ScanResult> {
     ccAgentsProject,
     ccPlugins,
     cxMcps,
+    cxMcpsProject,
     cxPlugins,
     cxSkills,
     curMcpsUser,
@@ -68,6 +74,7 @@ export async function scanAll(): Promise<ScanResult> {
     claudeCode.readAgentsProjects(projects),
     claudeCode.readPlugins(projects),
     codex.readMcps('codex-cli'),
+    codex.readMcpsProjects('codex-cli', projects),
     codex.readPlugins('codex-cli'),
     codex.readSkills('codex-cli'),
     cursor.readMcpsUser(),
@@ -86,6 +93,7 @@ export async function scanAll(): Promise<ScanResult> {
     }))
   }
   const cxMcpsDesktop = codexDesktopMirror(cxMcps)
+  const cxMcpsProjectDesktop = codexDesktopMirror(cxMcpsProject)
   const cxPluginsDesktop = codexDesktopMirror(cxPlugins)
   const cxSkillsDesktop = codexDesktopMirror(cxSkills)
 
@@ -100,9 +108,11 @@ export async function scanAll(): Promise<ScanResult> {
     ...ccAgentsProject,
     ...ccPlugins,
     ...cxMcps,
+    ...cxMcpsProject,
     ...cxPlugins,
     ...cxSkills,
     ...cxMcpsDesktop,
+    ...cxMcpsProjectDesktop,
     ...cxPluginsDesktop,
     ...cxSkillsDesktop,
     ...curMcpsUser,
@@ -140,6 +150,7 @@ export async function scanAll(): Promise<ScanResult> {
 
   const authedServerHashes = await listAuthedUrlHashes()
   const noAuthRequiredHashes = await probeRemoteUrls(merged, new Set(authedServerHashes))
+  const secretFindings = collectSecretFindings(merged)
 
   return {
     scannedAt: new Date().toISOString(),
@@ -147,8 +158,44 @@ export async function scanAll(): Promise<ScanResult> {
     items: merged,
     projects: projectInfo,
     authedServerHashes,
-    noAuthRequiredHashes
+    noAuthRequiredHashes,
+    secretFindings
   }
+}
+
+function locationTag(loc: SecretLocation): string {
+  if (loc.kind === 'env') return `env:${loc.key}`
+  if (loc.kind === 'header') return `header:${loc.key}`
+  if (loc.kind === 'arg') return `arg:${loc.index}`
+  return 'url'
+}
+
+// Scan every tool-config MCP presence (not the Passport library) for plaintext
+// secrets. Only masked previews are surfaced; the raw value stays in main.
+function collectSecretFindings(items: InventoryItem[]): McpSecretFinding[] {
+  const out: McpSecretFinding[] = []
+  for (const item of items) {
+    if (item.kind !== 'mcp') continue
+    for (const p of item.presences) {
+      if (p.toolId === 'passport' || p.source.kind !== 'mcp') continue
+      for (const found of findSecretsInCanonical(p.source.canonical)) {
+        out.push({
+          id: `${item.id}|${p.toolId}|${p.scope}|${p.projectPath ?? ''}|${locationTag(found.location)}`,
+          itemId: item.id,
+          name: item.name,
+          toolId: p.toolId,
+          scope: p.scope,
+          projectPath: p.projectPath,
+          location: found.location,
+          reason: found.reason,
+          preview: maskSecret(found.secret),
+          fixable: isExtractable(p.toolId, found.location),
+          suggestedVar: proposeVarName(item.name, found.location)
+        })
+      }
+    }
+  }
+  return out
 }
 
 // Probe each unique remote MCP URL (not already authed) to find ones that
@@ -202,12 +249,11 @@ function orderForKind(kind: string): number {
 }
 
 function mergeProjects(
-  a: { path: string; label: string }[],
-  b: { path: string; label: string }[]
+  ...lists: { path: string; label: string }[][]
 ): { path: string; label: string }[] {
   const seen = new Set<string>()
   const out: { path: string; label: string }[] = []
-  for (const p of [...a, ...b]) {
+  for (const p of lists.flat()) {
     if (seen.has(p.path)) continue
     seen.add(p.path)
     out.push(p)

@@ -109,9 +109,13 @@ async function syncMcp(name: string, canonical: CanonicalMcp, target: SyncTarget
     return `Wrote MCP "${name}" to ${target.projectPath}/.mcp.json and auto-trusted it.`
   }
   if (t === 'codex-cli' || t === 'codex-desktop') {
-    if (target.scope !== 'global') throw new Error('Codex MCPs are global only.')
-    await codex.upsertMcp(name, canonical)
-    return `Wrote MCP "${name}" to ~/.codex/config.toml (shared across Codex CLI + Desktop).`
+    if (target.scope === 'global') {
+      await codex.upsertMcp(name, canonical)
+      return `Wrote MCP "${name}" to ~/.codex/config.toml (shared across Codex CLI + Desktop).`
+    }
+    if (!target.projectPath) throw new Error('Project path required for project-scope MCP.')
+    await codex.upsertMcpProject(target.projectPath, name, canonical)
+    return `Wrote MCP "${name}" to ${target.projectPath}/.codex/config.toml.`
   }
   if (t === 'cursor') {
     if (target.scope === 'global') {

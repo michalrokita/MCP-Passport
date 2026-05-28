@@ -1,5 +1,6 @@
 import type {
   ExportRunRequest,
+  ExtractSecretRequest,
   ImportApplyRequest,
   ImportPlanRequest,
   ScanResult,
@@ -53,4 +54,12 @@ export async function importPlan(req: ImportPlanRequest) {
 
 export async function importApply(req: ImportApplyRequest) {
   return api.importApply(req)
+}
+
+export async function codexHealNames() {
+  return api.codexHealNames()
+}
+
+export async function mcpExtractSecret(req: ExtractSecretRequest) {
+  return api.mcpExtractSecret(req)
 }

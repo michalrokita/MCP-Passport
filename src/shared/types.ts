@@ -22,6 +22,13 @@ export interface ToolPresence {
   configPaths: { label: string; path: string; exists: boolean }[]
   authStatus: 'unknown' | 'authenticated' | 'not_signed_in'
   warnings?: string[]
+  /**
+   * MCP server names that are invalid for this tool's config format and the
+   * sanitized name they'd be renamed to. Currently only Codex, whose server
+   * names must match ^[a-zA-Z0-9_-]+$ — anything else fails startup. The
+   * renderer surfaces a one-click "Fix names" action when this is non-empty.
+   */
+  mcpNameIssues?: { from: string; to: string }[]
 }
 
 // Canonical MCP server — the lingua franca for cross-tool sync.
@@ -92,15 +99,49 @@ export type McpLocator =
   | { kind: 'claude-code-user' } // ~/.claude.json mcpServers
   | { kind: 'claude-code-project'; projectPath: string } // .mcp.json in repo
   | { kind: 'codex' } // ~/.codex/config.toml [mcp_servers.X]
+  | { kind: 'codex-project'; projectPath: string } // <project>/.codex/config.toml [mcp_servers.X]
   | { kind: 'cursor-user' } // ~/.cursor/mcp.json mcpServers
   | { kind: 'cursor-project'; projectPath: string } // <project>/.cursor/mcp.json
   | { kind: 'passport-library' } // local library inside MCP Passport
+
+/** Where in an MCP definition a secret was found. */
+export type SecretLocation =
+  | { kind: 'env'; key: string }
+  | { kind: 'header'; key: string }
+  | { kind: 'arg'; index: number }
+  | { kind: 'url' }
+
+/**
+ * A plaintext secret found in a specific tool's MCP config. Carries only a
+ * masked preview — the raw value never leaves the main process until the user
+ * explicitly extracts it.
+ */
+export interface McpSecretFinding {
+  /** Stable id so the renderer can request extraction without re-deriving location. */
+  id: string
+  itemId: string
+  name: string
+  toolId: ToolId
+  scope: Scope
+  projectPath?: string
+  location: SecretLocation
+  /** Why it's flagged, e.g. "DigitalOcean token", "embedded DB credential". */
+  reason: string
+  /** Masked, e.g. "dop_v1_…c548". Safe to show. */
+  preview: string
+  /** True if we can rewrite this tool's config to an env-var reference safely. */
+  fixable: boolean
+  /** Proposed env-var name for the extracted value. */
+  suggestedVar: string
+}
 
 export interface ScanResult {
   scannedAt: string
   tools: ToolPresence[]
   items: InventoryItem[]
   projects: ProjectInfo[]
+  /** Plaintext secrets detected across all scanned tool configs. */
+  secretFindings: McpSecretFinding[]
   // md5 hashes of MCP URLs for which mcp-remote has cached OAuth tokens
   // (i.e. a `{hash}_tokens.json` exists in `~/.mcp-auth/mcp-remote-VERSION/`).
   // The renderer computes the same hash for each MCP's URL and matches.
@@ -141,6 +182,35 @@ export interface SyncOutcome {
 export interface ApiError {
   message: string
   detail?: string
+}
+
+export interface CodexHealResult {
+  ok: boolean
+  message: string
+  /** Renames applied: { from: old invalid name, to: new sanitized name }. */
+  renamed: { from: string; to: string }[]
+}
+
+export interface ExtractSecretRequest {
+  /** Echoed from the McpSecretFinding the user chose to extract. */
+  itemId: string
+  name: string
+  toolId: ToolId
+  scope: Scope
+  projectPath?: string
+  location: SecretLocation
+  /** Env-var name to extract into (defaults to the finding's suggestedVar). */
+  varName: string
+}
+
+export interface ExtractSecretResult {
+  ok: boolean
+  message: string
+  /** The extracted secret value, shown once so the user can set the env var. */
+  value?: string
+  varName?: string
+  /** Ready-to-run commands to set the variable in the relevant environment. */
+  setCommands?: { shell: string; launchctl?: string }
 }
 
 declare global {
@@ -268,6 +338,15 @@ export interface PassportApi {
 
   // Fill in env-var / header secrets for an MCP and propagate to all tools that have it.
   mcpFillSecrets: (req: McpFillSecretsRequest) => Promise<McpFillSecretsResult>
+
+  // Rename Codex MCP servers whose names Codex rejects (spaces/symbols) to valid,
+  // collision-safe names in ~/.codex/config.toml. Edits headers in place so
+  // comments and formatting survive.
+  codexHealNames: () => Promise<CodexHealResult>
+
+  // Pull one detected plaintext secret out of a tool's MCP config into an
+  // env-var reference, returning the value + the command to set the variable.
+  mcpExtractSecret: (req: ExtractSecretRequest) => Promise<ExtractSecretResult>
 
   // Auto-update (Phase 1: notify-only — no in-app install yet, see README "About Gatekeeper")
   updateGetCurrentVersion: () => Promise<string>

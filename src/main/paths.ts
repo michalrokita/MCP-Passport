@@ -99,6 +99,10 @@ export function projectClaudeAgentsDir(projectPath: string): string {
   return join(projectPath, '.claude', 'agents')
 }
 
+export function projectCodexConfig(projectPath: string): string {
+  return join(projectPath, '.codex', 'config.toml')
+}
+
 export function projectCodexAgentsDir(projectPath: string): string {
   return join(projectPath, '.agents', 'skills')
 }

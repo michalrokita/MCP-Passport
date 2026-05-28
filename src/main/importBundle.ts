@@ -196,9 +196,16 @@ async function writeToolMcp(
     return `Wrote MCP "${name}" to ${projectPath}/.mcp.json.`
   }
   if (toolId === 'codex-cli' || toolId === 'codex-desktop') {
-    if (scope !== 'global') throw new Error('Codex MCPs are global only.')
-    await codex.upsertMcp(name, canonical)
-    return `Wrote MCP "${name}" to ~/.codex/config.toml.`
+    if (scope === 'global') {
+      await codex.upsertMcp(name, canonical)
+      return `Wrote MCP "${name}" to ~/.codex/config.toml.`
+    }
+    if (!projectPath) throw new Error('Project path missing for project-scoped MCP.')
+    if (!(await pathExists(projectPath))) {
+      throw new Error(`Project path does not exist on this machine: ${projectPath}`)
+    }
+    await codex.upsertMcpProject(projectPath, name, canonical)
+    return `Wrote MCP "${name}" to ${projectPath}/.codex/config.toml.`
   }
   if (toolId === 'cursor') {
     if (scope === 'global') {

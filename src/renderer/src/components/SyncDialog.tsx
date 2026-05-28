@@ -273,7 +273,7 @@ function supportsForKind(kind: InventoryItem['kind']): { global: ToolId[]; proje
   if (kind === 'mcp') {
     return {
       global: ['passport', 'claude-code', 'claude-desktop', 'codex-cli', 'codex-desktop', 'cursor'],
-      project: ['claude-code', 'cursor']
+      project: ['claude-code', 'cursor', 'codex-cli', 'codex-desktop']
     }
   }
   if (kind === 'skill') {

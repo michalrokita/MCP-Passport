@@ -23,6 +23,9 @@ import type {
   McpAuthClearRequest,
   McpFillSecretsRequest,
   McpFillSecretsResult,
+  CodexHealResult,
+  ExtractSecretRequest,
+  ExtractSecretResult,
   UpdateCheckResult,
   UpdateInfo,
   UpdatePrefs,
@@ -97,6 +100,10 @@ const api: PassportApi = {
     ipcRenderer.invoke('passport:mcp-auth:clear', req) as Promise<{ ok: boolean; message: string }>,
   mcpFillSecrets: (req: McpFillSecretsRequest) =>
     ipcRenderer.invoke('passport:mcp:fill-secrets', req) as Promise<McpFillSecretsResult>,
+  codexHealNames: () =>
+    ipcRenderer.invoke('passport:codex:heal-names') as Promise<CodexHealResult>,
+  mcpExtractSecret: (req: ExtractSecretRequest) =>
+    ipcRenderer.invoke('passport:mcp:extract-secret', req) as Promise<ExtractSecretResult>,
 
   updateGetCurrentVersion: () =>
     ipcRenderer.invoke('passport:update:current-version') as Promise<string>,

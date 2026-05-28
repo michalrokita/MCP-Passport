@@ -140,8 +140,12 @@ async function writeBackTo(
     return
   }
   if (target.toolId === 'codex-cli' || target.toolId === 'codex-desktop') {
-    if (target.scope !== 'global') throw new Error('Codex MCPs are global only.')
-    await codex.upsertMcp(name, canonical)
+    if (target.scope === 'global') {
+      await codex.upsertMcp(name, canonical)
+      return
+    }
+    if (!target.projectPath) throw new Error('Project path required.')
+    await codex.upsertMcpProject(target.projectPath, name, canonical)
     return
   }
   if (target.toolId === 'cursor') {

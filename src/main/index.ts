@@ -6,6 +6,7 @@ import { scanAll } from './scanner'
 import { syncItem } from './sync'
 import { removeItemFromTool } from './remove'
 import * as passport from './adapters/passport'
+import * as codex from './adapters/codex'
 import * as registry from './registry'
 import { searchRemote, clearSearchCache } from './registrySearch'
 import { planExport, buildBundle } from './exportBundle'
@@ -17,6 +18,7 @@ import {
 } from './passportFile'
 import { runAuthFlow, clearAuthFor } from './adapters/mcpAuthRunner'
 import { fillSecrets } from './fillSecrets'
+import { extractSecret } from './extractSecret'
 import {
   checkNow as checkUpdateNow,
   detectUpgrade as detectUpdateUpgrade,
@@ -40,6 +42,7 @@ import type {
   McpAuthRunRequest,
   McpAuthClearRequest,
   McpFillSecretsRequest,
+  ExtractSecretRequest,
   UpdatePrefs
 } from '../shared/types'
 
@@ -280,6 +283,23 @@ app.whenReady().then(() => {
   ipcMain.handle('passport:mcp:fill-secrets', async (_evt, req: McpFillSecretsRequest) =>
     fillSecrets(req)
   )
+
+  ipcMain.handle('passport:mcp:extract-secret', async (_evt, req: ExtractSecretRequest) =>
+    extractSecret(req)
+  )
+
+  ipcMain.handle('passport:codex:heal-names', async () => {
+    try {
+      const renamed = await codex.healInvalidNames()
+      const msg = renamed.length
+        ? `Renamed ${renamed.length} Codex server${renamed.length === 1 ? '' : 's'}: ` +
+          renamed.map((r) => `"${r.from}" → ${r.to}`).join(', ')
+        : 'No invalid Codex server names found.'
+      return { ok: true, message: msg, renamed }
+    } catch (e) {
+      return { ok: false, message: (e as Error).message, renamed: [] }
+    }
+  })
 
   // Auto-update (Phase 1: notify-only)
   ipcMain.handle('passport:update:current-version', async () => getCurrentVersion())
